@@ -5,10 +5,10 @@ export default function HomePage() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">M</div>
+          <div className="brand-mark">Q</div>
           <div>
-            <span className="brand-title">Messenger Lab</span>
-            <span className="brand-caption">Buyer CRM module</span>
+            <span className="brand-title">QualiFlow</span>
+            <span className="brand-caption">Inbound sales inbox</span>
           </div>
         </div>
 
@@ -36,7 +36,7 @@ export default function HomePage() {
           </div>
           <h2>메신저 기능을 시작할 준비가 되었습니다</h2>
           <p>
-            아직 thread, message, buyer context는 없습니다. 다음 단계에서 메시지 모델부터 작게 추가합니다.
+            아직 thread, message, lead context는 없습니다. 다음 단계에서 메시지 모델부터 작게 추가합니다.
           </p>
         </section>
       </main>

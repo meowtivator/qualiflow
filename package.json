@@ -1,29 +1,18 @@
 {
-  "name": "buyerflow",
+  "name": "qualiflow",
   "version": "0.0.1",
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "lucide-react": "1.16.0",
-    "next": "16.2.6",
-    "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "dev": "turbo run dev --filter=@qualiflow/web",
+    "build": "turbo run build",
+    "start": "pnpm --filter @qualiflow/web start",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
-    "@types/node": "25.9.1",
-    "@types/react": "19.2.15",
-    "@types/react-dom": "19.2.3",
-    "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
-    "typescript": "6.0.3"
+    "turbo": "2.9.16"
   },
   "overrides": {
     "esbuild": "0.28.0",

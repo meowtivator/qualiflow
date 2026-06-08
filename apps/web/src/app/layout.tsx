@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BuyerFlow",
-  description: "A clean messenger-only lab for the Buyer CRM"
+  title: "QualiFlow",
+  description: "A B2B inbound sales inbox for lead qualification workflows"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
