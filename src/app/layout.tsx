@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Buyer CRM Messenger Lab",
+  title: "BuyerFlow",
   description: "A clean messenger-only lab for the Buyer CRM"
 };
 

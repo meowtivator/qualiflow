@@ -1,6 +1,6 @@
-# Buyer CRM Messenger Lab
+# BuyerFlow
 
-메신저 기능만 독립적으로 공부하고 쌓기 위한 lab 프로젝트입니다.
+B2B 바이어 영업 흐름을 다루는 sales inbox 실험 프로젝트입니다.
 
 ## 00 Scaffold
 
@@ -24,6 +24,6 @@
 ## Commands
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
