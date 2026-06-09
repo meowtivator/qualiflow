@@ -7,7 +7,8 @@ B2B 인바운드 리드를 분류하고 후속 흐름을 관리하는 sales inbo
 ```txt
 apps/
   web/        # Next.js demo app
-packages/    # Future core, UI, and adapter packages
+packages/
+  core/       # Shared domain contracts for leads, threads, messages, and adapters
 ```
 
 ## 00 Scaffold
@@ -20,12 +21,12 @@ packages/    # Future core, UI, and adapter packages
 - 조용한 CRM 스타일의 좌측 사이드바
 - `메신저` 탭 하나
 - 빈 메신저 작업 화면
+- `@qualiflow/core` 타입 계약
 
 아직 없는 것:
 
-- thread/message 모델
 - mock data
-- lead/customer 연결
+- lead/customer UI 연결
 - API
 - LLM
 - Supabase
