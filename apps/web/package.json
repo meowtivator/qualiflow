@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@qualiflow/adapter-mock": "workspace:*",
+    "@qualiflow/core": "workspace:*",
     "lucide-react": "1.16.0",
     "next": "16.2.6",
     "react": "19.2.6",

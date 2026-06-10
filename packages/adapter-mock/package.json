@@ -1,9 +1,9 @@
 {
-  "name": "@qualiflow/core",
+  "name": "@qualiflow/adapter-mock",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Shared domain contracts for QualiFlow lead qualification and conversation workflows.",
+  "description": "Mock conversation adapter for QualiFlow development and UI review.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -19,6 +19,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@qualiflow/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "6.0.3"
