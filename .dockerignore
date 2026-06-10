@@ -1,0 +1,10 @@
+.git
+.next
+.turbo
+node_modules
+dist
+apps/web/.next
+apps/web/tsconfig.tsbuildinfo
+packages/*/dist
+*.log
+.DS_Store
