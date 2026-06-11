@@ -145,6 +145,7 @@ a {
 .status-pill {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   min-height: 30px;
   border: 1px solid var(--hairline);
   border-radius: 999px;
@@ -152,6 +153,47 @@ a {
   color: var(--ink-muted);
   padding: 0 10px;
   font-size: 12px;
+}
+
+.status-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status-pill.ok {
+  border-color: rgba(22, 121, 76, 0.22);
+  color: var(--success);
+}
+
+.status-pill.warning {
+  border-color: rgba(138, 97, 22, 0.24);
+  color: var(--warning);
+}
+
+.status-pill small {
+  overflow: hidden;
+  max-width: 260px;
+  color: var(--ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  color: var(--ink-muted);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.status-link:hover {
+  border-color: var(--hairline-strong);
+  color: var(--ink);
 }
 
 .workspace-summary {
@@ -588,6 +630,116 @@ a {
   text-align: center;
 }
 
+.auth-page {
+  display: grid;
+  min-height: 100vh;
+  grid-template-rows: auto 1fr;
+  background: var(--canvas);
+  padding: 24px;
+}
+
+.auth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.brand-link {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.auth-card {
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  width: min(100%, 460px);
+  gap: 16px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  padding: 28px;
+}
+
+.auth-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  background: var(--primary-fill);
+  color: var(--primary);
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.auth-card p {
+  margin: 8px 0 0;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface-1);
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+  padding: 11px 12px;
+}
+
+.field input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-fill);
+}
+
+.field-message {
+  margin: -4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.field-message.error {
+  color: var(--danger);
+}
+
+.field-message.success {
+  color: var(--success);
+}
+
+.field-message.hint a {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.primary-button {
+  border: 0;
+  background: var(--primary);
+  color: var(--on-primary);
+  cursor: pointer;
+  font-weight: 650;
+  padding: 12px;
+}
+
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 @media (max-width: 720px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -602,6 +754,15 @@ a {
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .status-group {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .status-pill small {
+    max-width: 180px;
   }
 
   .workspace-summary,

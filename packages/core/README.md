@@ -6,7 +6,8 @@ This package does not talk to WhatsApp, Instagram, Alibaba, Supabase, or any UI 
 
 ## Contracts
 
-- `Lead`: the person or company that contacted a customer.
+- `Lead`: the person or company that contacted a client.
+- `clientId`: the optional client account this lead or thread belongs to.
 - `Channel`: the source surface such as WhatsApp, Instagram, Alibaba, email, or manual entry.
 - `Thread`: a conversation grouped by lead and channel.
 - `Message`: a single inbound or outbound message inside a thread.

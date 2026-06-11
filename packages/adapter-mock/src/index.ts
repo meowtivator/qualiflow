@@ -14,7 +14,7 @@ import {
 export const mockLeads: Lead[] = [
   {
     id: "lead_harbor_beauty",
-    customerId: "customer_aesthein",
+    clientId: "client_aesthein",
     displayName: "Olivia Grant",
     companyName: "Harbor Beauty Imports",
     countryCode: "US",
@@ -32,7 +32,7 @@ export const mockLeads: Lead[] = [
   },
   {
     id: "lead_mirae_beauty_hk",
-    customerId: "customer_aesthein",
+    clientId: "client_aesthein",
     displayName: "Patrick Wong",
     companyName: "Mirae Beauty HK",
     countryCode: "HK",
@@ -50,7 +50,7 @@ export const mockLeads: Lead[] = [
   },
   {
     id: "lead_bangkok_food",
-    customerId: "customer_aesthein",
+    clientId: "client_aesthein",
     displayName: "Niran Chai",
     companyName: "Bangkok Food Trading",
     countryCode: "TH",
@@ -71,7 +71,7 @@ export const mockThreads: Thread[] = [
   {
     id: "thread_harbor_alibaba",
     leadId: "lead_harbor_beauty",
-    customerId: "customer_aesthein",
+    clientId: "client_aesthein",
     channelId: "alibaba",
     externalThreadId: "ali-1001",
     title: "Clinic line import inquiry",
@@ -89,7 +89,7 @@ export const mockThreads: Thread[] = [
   {
     id: "thread_mirae_instagram",
     leadId: "lead_mirae_beauty_hk",
-    customerId: "customer_aesthein",
+    clientId: "client_aesthein",
     channelId: "instagram",
     externalThreadId: "ig-822",
     title: "Mask pack sample request",
@@ -107,7 +107,7 @@ export const mockThreads: Thread[] = [
   {
     id: "thread_bangkok_email",
     leadId: "lead_bangkok_food",
-    customerId: "customer_aesthein",
+    clientId: "client_aesthein",
     channelId: "email",
     externalThreadId: "mail-44",
     title: "Small batch ingredient test inquiry",
@@ -133,7 +133,7 @@ export const mockMessages: Message[] = [
     externalMessageId: "ali-msg-1",
     direction: "inbound",
     status: "read",
-    visibility: "customer_visible",
+    visibility: "client_visible",
     author: {
       displayName: "Olivia Grant",
       role: "lead"
@@ -152,7 +152,7 @@ export const mockMessages: Message[] = [
     channelId: "alibaba",
     direction: "outbound",
     status: "delivered",
-    visibility: "customer_visible",
+    visibility: "client_visible",
     author: {
       id: "user_jaewoo",
       displayName: "Jaewoo Park",
@@ -171,7 +171,7 @@ export const mockMessages: Message[] = [
     channelId: "alibaba",
     direction: "inbound",
     status: "read",
-    visibility: "customer_visible",
+    visibility: "client_visible",
     author: {
       displayName: "Olivia Grant",
       role: "lead"
@@ -190,7 +190,7 @@ export const mockMessages: Message[] = [
     channelId: "instagram",
     direction: "inbound",
     status: "read",
-    visibility: "customer_visible",
+    visibility: "client_visible",
     author: {
       displayName: "Patrick Wong",
       role: "lead"
@@ -209,7 +209,7 @@ export const mockMessages: Message[] = [
     channelId: "instagram",
     direction: "outbound",
     status: "sent",
-    visibility: "customer_visible",
+    visibility: "client_visible",
     author: {
       id: "user_jaewoo",
       displayName: "Jaewoo Park",
@@ -252,7 +252,7 @@ export const mockQualifications: LeadQualification[] = [
     reasons: ["Beauty distribution context is clear", "Sample has already arrived", "Buyer asked for MOQ and lead time"],
     missingEvidence: ["Confirm final distributor pricing tier"],
     recommendedNextAction: "Send MOQ, lead time, and distributor price sheet.",
-    visibility: "customer_shareable",
+    visibility: "client_shareable",
     evaluatedBy: "human",
     evaluatedAt: "2026-05-24T10:30:00.000Z",
     signals: [
@@ -283,7 +283,7 @@ export const mockQualifications: LeadQualification[] = [
     reasons: ["Beauty shop context is stated", "Sample request is explicit"],
     missingEvidence: ["Need website or shop verification", "Need shipping address"],
     recommendedNextAction: "Ask for shop URL and shipping address before sending samples.",
-    visibility: "customer_shareable",
+    visibility: "client_shareable",
     evaluatedBy: "model",
     evaluatedAt: "2026-05-22T13:05:00.000Z",
     signals: [
@@ -376,7 +376,7 @@ export const mockConversationAdapter: ConversationAdapter = {
         return false;
       }
 
-      if (request?.customerId && thread.customerId !== request.customerId) {
+      if (request?.clientId && thread.clientId !== request.clientId) {
         return false;
       }
 
@@ -408,7 +408,7 @@ export const mockConversationAdapter: ConversationAdapter = {
       channelId: thread.channelId,
       direction: "outbound",
       status: "draft",
-      visibility: "customer_visible",
+      visibility: "client_visible",
       author: {
         id: "user_local",
         displayName: "Operator",

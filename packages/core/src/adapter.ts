@@ -12,7 +12,7 @@ export type AdapterIdentity = {
 
 export type ListThreadsRequest = PageRequest & {
   leadId?: string;
-  customerId?: string;
+  clientId?: string;
   updatedSince?: string;
 };
 
