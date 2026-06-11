@@ -8,6 +8,9 @@ import {
   type Thread
 } from "@qualiflow/core";
 
+import { normalizeAlibabaConversation } from "./normalize.js";
+import type { AlibabaRawConversation } from "./raw-types.js";
+
 export type AlibabaPurchaseGrade = "L1" | "L2" | "L3" | "L4" | (string & {});
 
 export type AlibabaInboundBuyer = {
@@ -232,5 +235,25 @@ export function createAlibabaAdapter(options: CreateAlibabaAdapterOptions = {}):
 }
 
 export const alibabaAdapter = createAlibabaAdapter();
+
+// 알리바바 raw 대화들을 받아 정규화한 뒤, 표준 ConversationAdapter로 묶어 반환한다.
+// raw → normalize(번역) → adapter(표준 인터페이스) 전체를 한 번에 잇는 입구.
+// (실제 세션에서 긁어오는 코드가 붙기 전까지는 견본/캡처 대화를 끼워 동작을 확인하는 용도)
+export function createAlibabaAdapterFromConversations(
+  conversations: AlibabaRawConversation[]
+): ConversationAdapter {
+  const leads: Lead[] = [];
+  const threads: Thread[] = [];
+  const messages: Message[] = [];
+
+  for (const conversation of conversations) {
+    const normalized = normalizeAlibabaConversation(conversation);
+    leads.push(normalized.lead);
+    threads.push(normalized.thread);
+    messages.push(...normalized.messages);
+  }
+
+  return createAlibabaAdapter({ leads, threads, messages });
+}
 
 export * from "./headless.js";

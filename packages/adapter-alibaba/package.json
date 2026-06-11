@@ -17,6 +17,7 @@
     "build": "tsc -p tsconfig.build.json",
     "headless:discover": "tsx ./src/cli/headless-discover.ts",
     "inquiry:record": "tsx ./src/cli/record-inquiry.ts",
+    "normalize:check": "tsx ./src/normalize.check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
