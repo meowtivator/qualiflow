@@ -8,7 +8,7 @@ export type ThreadPriority = "low" | "normal" | "high" | "urgent";
 export type Thread = {
   id: EntityId;
   leadId: EntityId;
-  customerId?: EntityId;
+  clientId?: EntityId;
   channelId: ChannelId;
   externalThreadId?: string;
   title?: string;

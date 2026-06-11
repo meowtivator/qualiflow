@@ -7,7 +7,7 @@ export type QualificationConfidence = "low" | "medium" | "high";
 
 export type QualificationEvaluator = "human" | "model" | "rule";
 
-export type QualificationVisibility = "internal" | "customer_shareable";
+export type QualificationVisibility = "internal" | "client_shareable";
 
 export type LeadSignalSource = ChannelId | "website" | "search" | "sheet" | "manual" | "model";
 

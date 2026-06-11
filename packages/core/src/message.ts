@@ -5,7 +5,7 @@ export type MessageDirection = "inbound" | "outbound";
 
 export type MessageStatus = "draft" | "queued" | "sent" | "delivered" | "read" | "failed";
 
-export type MessageVisibility = "internal" | "customer_visible";
+export type MessageVisibility = "internal" | "client_visible";
 
 export type MessageAuthor = {
   id?: EntityId;

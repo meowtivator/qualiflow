@@ -14,7 +14,7 @@ export type LeadLifecycleStage =
 
 export type Lead = {
   id: EntityId;
-  customerId?: EntityId;
+  clientId?: EntityId;
   displayName: string;
   companyName?: string;
   countryCode?: CountryCode;
