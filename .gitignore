@@ -7,6 +7,7 @@ dist
 .env.local
 .auth/
 .captures/
+.data/
 .DS_Store
 *.log
 *.tsbuildinfo

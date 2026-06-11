@@ -3,7 +3,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { runAlibabaHeadlessDiscovery, type AlibabaHeadlessDiscoveryOptions, type AlibabaInboundBuyer } from "../index.js";
+import { runAlibabaHeadlessDiscovery, type AlibabaHeadlessDiscoveryOptions } from "../headless.js";
+import type { AlibabaInboundBuyer } from "../index.js";
 
 type CliArgs = AlibabaHeadlessDiscoveryOptions & {
   input?: string;

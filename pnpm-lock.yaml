@@ -14,6 +14,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@qualiflow/adapter-alibaba':
+        specifier: workspace:*
+        version: link:../../packages/adapter-alibaba
       '@qualiflow/adapter-mock':
         specifier: workspace:*
         version: link:../../packages/adapter-mock
