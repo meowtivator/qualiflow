@@ -8,8 +8,18 @@ import {
   type Thread
 } from "@qualiflow/core";
 
-import { normalizeAlibabaConversation } from "./normalize.js";
-import type { AlibabaRawConversation } from "./raw-types.js";
+import { normalizeAlibabaConversation } from "./normalize";
+import type { AlibabaRawConversation } from "./raw-types";
+
+// 외부(웹앱 등)에서 raw 대화를 타입과 함께 다룰 수 있게 re-export.
+export type {
+  AlibabaRawConversation,
+  AlibabaRawMessage,
+  AlibabaRawContact,
+  AlibabaBuyerActivity,
+  AlibabaBuyerOrderCounts
+} from "./raw-types";
+export { normalizeAlibabaConversation, normalizeAlibabaContact, normalizeAlibabaMessage } from "./normalize";
 
 export type AlibabaPurchaseGrade = "L1" | "L2" | "L3" | "L4" | (string & {});
 
@@ -236,6 +246,10 @@ export function createAlibabaAdapter(options: CreateAlibabaAdapterOptions = {}):
 
 export const alibabaAdapter = createAlibabaAdapter();
 
+// 참고: 헤드리스(Playwright) 코드는 일부러 여기서 re-export하지 않는다.
+// index.ts는 브라우저/서버 어디서나 번들 가능한 "순수" 진입점으로 유지하고,
+// Node 전용 headless는 CLI가 "./headless.js"에서 직접 import한다.
+
 // 알리바바 raw 대화들을 받아 정규화한 뒤, 표준 ConversationAdapter로 묶어 반환한다.
 // raw → normalize(번역) → adapter(표준 인터페이스) 전체를 한 번에 잇는 입구.
 // (실제 세션에서 긁어오는 코드가 붙기 전까지는 견본/캡처 대화를 끼워 동작을 확인하는 용도)
@@ -255,5 +269,3 @@ export function createAlibabaAdapterFromConversations(
 
   return createAlibabaAdapter({ leads, threads, messages });
 }
-
-export * from "./headless.js";

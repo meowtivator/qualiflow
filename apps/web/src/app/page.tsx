@@ -1,14 +1,7 @@
 import { MessageSquare } from "lucide-react";
 
-import {
-  getMockChannelById,
-  getMockLeadById,
-  getMockQualificationByLeadId,
-  mockConversationAdapter,
-  mockQualifications
-} from "@qualiflow/adapter-mock";
-
 import { MessengerWorkspace } from "@/features/messenger/messenger-workspace";
+import { loadConversationSource } from "@/lib/conversation-source";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -111,9 +104,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const params = await searchParams;
   const runtimeStatus = await loadRuntimeStatus();
   const selectedThreadParam = Array.isArray(params?.thread) ? params.thread[0] : params?.thread;
+  const source = await loadConversationSource();
   const [leadPage, threadPage] = await Promise.all([
-    mockConversationAdapter.listLeads?.(),
-    mockConversationAdapter.listThreads()
+    source.adapter.listLeads?.(),
+    source.adapter.listThreads()
   ]);
   const leads = leadPage?.items ?? [];
   const threads = [...threadPage.items].sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
@@ -133,19 +127,19 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     );
   }
 
-  const selectedLead = getMockLeadById(selectedThread.leadId);
-  const selectedChannel = getMockChannelById(selectedThread.channelId);
-  const selectedQualification = getMockQualificationByLeadId(selectedThread.leadId);
-  const messagePage = await mockConversationAdapter.listMessages({ threadId: selectedThread.id });
+  const selectedLead = source.getLead(selectedThread.leadId);
+  const selectedChannel = source.getChannel(selectedThread.channelId);
+  const selectedQualification = source.getQualification(selectedThread.leadId);
+  const messagePage = await source.adapter.listMessages({ threadId: selectedThread.id });
   const messages = messagePage.items;
   const threadItems = threads.map((thread) => ({
     thread,
-    lead: getMockLeadById(thread.leadId),
-    channel: getMockChannelById(thread.channelId),
-    qualification: getMockQualificationByLeadId(thread.leadId)
+    lead: source.getLead(thread.leadId),
+    channel: source.getChannel(thread.channelId),
+    qualification: source.getQualification(thread.leadId)
   }));
-  const selectedLeadChannels = (selectedLead?.sourceChannelIds ?? []).map((channelId) => getMockChannelById(channelId));
-  const gradeACount = mockQualifications.filter((qualification) => qualification.grade === "A").length;
+  const selectedLeadChannels = (selectedLead?.sourceChannelIds ?? []).map((channelId) => source.getChannel(channelId));
+  const gradeACount = source.gradeACount;
   const openThreads = threads.filter((thread) => thread.status === "open").length;
 
   return (
