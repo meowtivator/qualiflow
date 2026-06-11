@@ -9,7 +9,8 @@
     "build": "turbo run build",
     "start": "pnpm --filter @qualiflow/web start",
     "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run build"
   },
   "devDependencies": {
     "turbo": "2.9.16"
