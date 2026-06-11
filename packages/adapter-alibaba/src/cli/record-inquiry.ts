@@ -203,10 +203,11 @@ async function main() {
   let candidateResponseCount = 0;
 
   page.on("request", async (request: Request) => {
+    const index = eventIndex++;
     const postData = request.postData() ?? "";
     const event: NetworkEvent = {
       type: "request",
-      index: eventIndex++,
+      index,
       timestamp: new Date().toISOString(),
       method: request.method(),
       url: request.url(),
@@ -220,6 +221,7 @@ async function main() {
   });
 
   page.on("response", async (response: Response) => {
+    const index = eventIndex++;
     const contentType = response.headers()["content-type"] ?? "";
     let bodyPreview = "";
     let responseBodyFile: string | undefined;
@@ -229,7 +231,7 @@ async function main() {
       try {
         const rawText = await response.text();
         const redactedText = redactText(rawText).slice(0, args.maxBodyChars);
-        const fileName = buildResponseFileName(eventIndex, response);
+        const fileName = buildResponseFileName(index, response);
         responseBodyFile = `responses/${fileName}`;
         bodyPreview = redactedText.slice(0, 4_000);
         responseBodyCount += 1;
@@ -248,7 +250,7 @@ async function main() {
 
     const event: NetworkEvent = {
       type: "response",
-      index: eventIndex++,
+      index,
       timestamp: new Date().toISOString(),
       method: response.request().method(),
       url: response.url(),
