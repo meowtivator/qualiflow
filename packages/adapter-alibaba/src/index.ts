@@ -232,3 +232,5 @@ export function createAlibabaAdapter(options: CreateAlibabaAdapterOptions = {}):
 }
 
 export const alibabaAdapter = createAlibabaAdapter();
+
+export * from "./headless.js";
