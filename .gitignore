@@ -5,6 +5,8 @@ dist
 .vercel
 .env
 .env.local
+.auth/
+.captures/
 .DS_Store
 *.log
 *.tsbuildinfo

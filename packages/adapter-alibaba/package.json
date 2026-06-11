@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "headless:discover": "tsx ./src/cli/headless-discover.ts",
+    "inquiry:record": "tsx ./src/cli/record-inquiry.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
