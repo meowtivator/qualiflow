@@ -26,6 +26,16 @@ type RuntimeStatus = {
 };
 
 async function loadRuntimeStatus(): Promise<RuntimeStatus> {
+  // 임시 데모 스위치: auth를 끄거나 비번 게이트를 쓰는 동안은 로그인/DB 확인을 건너뛰고 데모 배지만 보여준다.
+  if (process.env.QUALIFLOW_DISABLE_AUTH === "1" || process.env.QUALIFLOW_DEMO_PASSWORD) {
+    return {
+      label: "Demo mode",
+      detail: "임시 게이트 (mock 데이터)",
+      tone: "warning",
+      showSignOut: false
+    };
+  }
+
   if (!isSupabaseConfigured()) {
     return {
       label: "Mock adapter connected",
