@@ -55,6 +55,25 @@ https://onetalk.alibaba.com/message/weblitePWA.htm?spm=a2700.product_home_fy25.h
 Expected local files:
 
 - `../../.auth/alibaba.storage.json` - Playwright `storageState` from a manual Alibaba login.
-- `../../.captures/alibaba-inquiry/...` - ignored capture output with HAR, network events, and redacted response previews.
+- `../../.captures/alibaba-inquiry/...` - ignored capture output with HAR, network events, WebSocket events, IndexedDB snapshots, and redacted response previews.
 
 The recorder does not automate login, bypass CAPTCHA, or send messages. It only records network traffic that the logged-in operator can already access in the browser.
+
+Capture outputs:
+
+- `network-events.jsonl` - request/response metadata for fetch and XHR traffic.
+- `responses/*.txt` - redacted text previews for readable fetch/XHR response bodies.
+- `websocket-events.jsonl` - CDP WebSocket open/close/frame metadata with redacted payload previews.
+- `indexeddb-snapshot.json` - browser IndexedDB database/store names, counts, key lists, and small redacted sample records from the current OneTalk page.
+- `network.har.zip` - browser HAR archive for low-level replay/debugging.
+- `summary.json` - capture file locations and event counts.
+
+Useful options:
+
+```bash
+pnpm --filter @qualiflow/adapter-alibaba inquiry:record -- \
+  --indexeddb-sample-records 5 \
+  --max-websocket-payload-chars 40000
+```
+
+Use `--no-indexeddb` when you only need network/WebSocket data. The recorder stores redacted previews for analysis, not raw buyer message exports.
