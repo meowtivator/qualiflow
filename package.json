@@ -10,9 +10,12 @@
     "start": "pnpm --filter @qualiflow/web start",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run typecheck && pnpm run lint && pnpm run build"
+    "schema:check": "tsx scripts/check-schema-contract.ts",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run build && pnpm run schema:check"
   },
   "devDependencies": {
+    "@qualiflow/core": "workspace:*",
+    "tsx": "4.20.6",
     "turbo": "2.9.16"
   },
   "overrides": {
