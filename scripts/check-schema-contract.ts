@@ -7,7 +7,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { FOLLOW_UP_STATES, LEAD_STAGES, LEAD_SUB_STAGES } from "@qualiflow/core";
+import { CHANNEL_CONNECTION_STATUSES, FOLLOW_UP_STATES, LEAD_STAGES, LEAD_SUB_STAGES } from "@qualiflow/core";
 
 const migrationsDir = resolve(process.cwd(), "supabase/migrations");
 const files = (await readdir(migrationsDir)).filter((name) => name.endsWith(".sql")).sort();
@@ -53,6 +53,7 @@ console.log("schema-contract — 마이그레이션 CHECK ↔ core 상수 일치
 check("leads.stage", "stage", LEAD_STAGES);
 check("leads.sub_stage", "sub_stage", LEAD_SUB_STAGES);
 check("threads.follow_up", "follow_up", FOLLOW_UP_STATES);
+check("channel_connections.status", "status", CHANNEL_CONNECTION_STATUSES);
 
 if (failed) {
   console.error("\n❌ 불일치 — 마이그레이션과 core 상수를 맞추세요.");
