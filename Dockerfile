@@ -8,13 +8,15 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.js
 COPY apps/web/package.json apps/web/package.json
 COPY packages/core/package.json packages/core/package.json
 COPY packages/adapter-mock/package.json packages/adapter-mock/package.json
+COPY packages/adapter-alibaba/package.json packages/adapter-alibaba/package.json
+COPY packages/adapter-chat/package.json packages/adapter-chat/package.json
+COPY packages/adapter-whatsapp/package.json packages/adapter-whatsapp/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
-COPY --from=deps /app/packages/core/node_modules ./packages/core/node_modules
-COPY --from=deps /app/packages/adapter-mock/node_modules ./packages/adapter-mock/node_modules
+# deps 단계의 전체 트리(node_modules 포함)를 가져온 뒤 소스를 덮어쓴다.
+# (패키지가 추가돼도 안 깨지도록 패키지별 node_modules를 일일이 나열하지 않는다.)
+COPY --from=deps /app/ ./
 COPY . .
 RUN pnpm run build
 
