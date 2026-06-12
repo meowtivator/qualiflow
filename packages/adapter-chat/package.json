@@ -1,9 +1,9 @@
 {
-  "name": "@qualiflow/adapter-alibaba",
+  "name": "@qualiflow/adapter-chat",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Alibaba inbound buyer adapter and discovery helpers for QualiFlow.",
+  "description": "Generic chat-channel adapter (Telegram, Instagram, WhatsApp, ...) for QualiFlow.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,19 +15,13 @@
   "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "headless:discover": "tsx ./src/cli/headless-discover.ts",
-    "inquiry:record": "tsx ./src/cli/record-inquiry.ts",
-    "inquiry:extract": "tsx ./src/cli/extract-session.ts",
-    "normalize:check": "tsx ./src/normalize.check.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@qualiflow/core": "workspace:*",
-    "playwright-core": "1.58.2"
+    "@qualiflow/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "25.9.1",
-    "tsx": "4.20.6",
     "typescript": "6.0.3"
   }
 }

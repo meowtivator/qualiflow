@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@qualiflow/adapter-alibaba": "workspace:*",
+    "@qualiflow/adapter-chat": "workspace:*",
     "@qualiflow/adapter-mock": "workspace:*",
     "@qualiflow/core": "workspace:*",
     "@supabase/ssr": "^0.12.0",
