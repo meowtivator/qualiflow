@@ -54,20 +54,35 @@ export function ReplyDraft(props: ReplyDraftProps) {
 
   return (
     <div className="reply-draft">
-      <div className="reply-draft-header">
-        <div className="reply-draft-copy">
-          <span>답변 초안{badge ? <small> · {badge}</small> : null}</span>
-          <p>{props.recommendedNextAction ?? "다음 액션을 확인한 뒤 답변을 작성합니다."}</p>
-        </div>
-        <button className="send-button" type="button" onClick={generate} disabled={loading}>
-          <Send size={16} />
-          <span>{loading ? "생성 중..." : "초안 생성"}</span>
-        </button>
+      <div className="reply-draft-copy">
+        <span>답변 초안{badge ? <small> · {badge}</small> : null}</span>
+        <p>{props.recommendedNextAction ?? "AI가 바이어 메시지를 읽고 답변 초안을 만들어줍니다."}</p>
       </div>
+      <button
+        className="send-button reply-generate"
+        type="button"
+        onClick={generate}
+        disabled={loading}
+        style={{
+          width: "100%",
+          justifyContent: "center",
+          gap: "8px",
+          padding: "13px 16px",
+          fontSize: "15px",
+          fontWeight: 600,
+          borderRadius: "10px",
+          margin: "12px 0",
+          cursor: loading ? "default" : "pointer",
+          opacity: loading ? 0.7 : 1
+        }}
+      >
+        <Send size={18} />
+        <span>{loading ? "생성 중…" : "✨ AI 답변 초안 생성"}</span>
+      </button>
       <textarea
         className="reply-textarea"
         onChange={(event) => setDraft(event.target.value)}
-        placeholder="‘초안 생성’을 누르면 AI(또는 기본 템플릿) 답변이 여기에 들어옵니다. (API 키가 없으면 자동으로 템플릿)"
+        placeholder="위 버튼을 누르면 AI(또는 기본 템플릿) 답변이 여기에 들어옵니다. (API 키가 없으면 자동으로 템플릿)"
         value={draft}
       />
     </div>
