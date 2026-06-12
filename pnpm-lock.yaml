@@ -17,6 +17,9 @@ importers:
       '@qualiflow/adapter-alibaba':
         specifier: workspace:*
         version: link:../../packages/adapter-alibaba
+      '@qualiflow/adapter-chat':
+        specifier: workspace:*
+        version: link:../../packages/adapter-chat
       '@qualiflow/adapter-mock':
         specifier: workspace:*
         version: link:../../packages/adapter-mock
@@ -76,6 +79,19 @@ importers:
       tsx:
         specifier: 4.20.6
         version: 4.20.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/adapter-chat:
+    dependencies:
+      '@qualiflow/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: 25.9.1
+        version: 25.9.1
       typescript:
         specifier: 6.0.3
         version: 6.0.3
