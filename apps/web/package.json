@@ -8,7 +8,8 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "qualify:eval": "tsx src/lib/qualify/eval.ts"
   },
   "dependencies": {
     "@qualiflow/adapter-alibaba": "workspace:*",
@@ -28,6 +29,7 @@
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "tsx": "4.20.6",
     "typescript": "6.0.3"
   }
 }

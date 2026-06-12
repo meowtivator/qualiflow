@@ -13,6 +13,9 @@ type ConversationPanelProps = {
 };
 
 export function ConversationPanel({ lead, channel, qualification, messages }: ConversationPanelProps) {
+  // 답변 초안 LLM에 넘길 "바이어의 최신 inbound 메시지"
+  const latestBuyerMessage = [...messages].reverse().find((message) => message.direction === "inbound");
+
   return (
     <section className="conversation-panel">
       <div className="conversation-header">
@@ -41,6 +44,7 @@ export function ConversationPanel({ lead, channel, qualification, messages }: Co
       </div>
 
       <ReplyDraft
+        buyerMessage={latestBuyerMessage?.content.text}
         channelLabel={channel.label}
         leadName={lead?.displayName ?? getLeadLabel(lead)}
         qualificationSummary={qualification?.summary}

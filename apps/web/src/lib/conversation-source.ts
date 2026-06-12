@@ -24,6 +24,8 @@ import {
   type Page
 } from "@qualiflow/core";
 
+import { scoreAllLeads } from "./qualify/score";
+
 // 실제 채널 데이터(실제 고객 개인정보)는 절대 git에 안 올린다.
 // gitignore된 .data/ 폴더에서 채널별 파일을 읽고, 하나도 없으면 mock으로 폴백한다.
 //   .data/alibaba-conversations.json      (AlibabaRawConversation[])
@@ -117,13 +119,16 @@ export async function loadConversationSource(): Promise<ConversationSource> {
     leadById.set(lead.id, lead);
   }
 
+  // 등급 스코어링: 채널 데이터엔 등급이 없으므로 결정적 스코어링으로 매긴다.
+  // (LLM이 아니라 규칙 기반 — score.ts 참고. 비즈니스 규칙이라 웹 레이어에 둠)
+  const qualByLead = await scoreAllLeads(adapter, [...leadById.values()]);
+
   return {
     kind: "channels",
     adapter,
     getLead: (leadId) => leadById.get(leadId),
     getChannel: (channelId) => resolveChannel(channelId),
-    // 채널 데이터에는 아직 등급(qualification)이 없다 — 추후 in-product AI가 채울 자리.
-    getQualification: () => undefined,
-    gradeACount: 0
+    getQualification: (leadId) => qualByLead.get(leadId),
+    gradeACount: [...qualByLead.values()].filter((qualification) => qualification.grade === "A").length
   };
 }

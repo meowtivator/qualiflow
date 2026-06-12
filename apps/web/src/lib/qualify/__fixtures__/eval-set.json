@@ -1,0 +1,20 @@
+{
+  "_comment": "리드 등급 평가셋(정답지). 합성 데이터(실제 바이어 정보 아님). label = 사람이 매긴 정답(ground truth). 논문 실험 + 스코어링 QA용. 라이브 추출기로 실데이터를 익명화해 늘릴 수 있다.",
+  "items": [
+    { "id": 1, "message": "We run a skincare boutique in Berlin and want 500 units of your vitamin C serum. Please send a quote.", "company": "Berlin Skincare", "country": "Germany", "label": "A" },
+    { "id": 2, "message": "Interested in your sunscreen line. We distribute K-beauty in Vietnam with 3 retail stores.", "country": "Vietnam", "label": "A" },
+    { "id": 3, "message": "Our cosmetics wholesale company needs your MOQ and pricing for 1000 units.", "company": "Gulf Cosmetics", "country": "UAE", "label": "A" },
+    { "id": 4, "message": "We own a chain of beauty salons in Bangkok and want to stock your serums.", "country": "Thailand", "label": "A" },
+    { "id": 5, "message": "Please send a quotation for 200 boxes of facial masks for our online beauty store.", "label": "A" },
+    { "id": 6, "message": "We are a derma clinic interested in ordering your retinol products.", "label": "A" },
+    { "id": 7, "message": "How much are samples?", "label": "B" },
+    { "id": 8, "message": "Do you have a product catalog?", "label": "B" },
+    { "id": 9, "message": "Interested in your products, can you tell me more?", "label": "B" },
+    { "id": 10, "message": "What is your minimum order quantity?", "label": "B" },
+    { "id": 11, "message": "We are a digital marketing agency. Let us promote your brand for you.", "label": "C" },
+    { "id": 12, "message": "BEST LOAN OFFER 80% OFF click www.xxx.com", "label": "C" },
+    { "id": 13, "message": "Rank your website number 1 on Google with our SEO service.", "label": "C" },
+    { "id": 14, "message": "Crypto investment opportunity, double your money fast.", "label": "C" },
+    { "id": 15, "message": "We provide freight forwarding and logistics services.", "label": "C" }
+  ]
+}
