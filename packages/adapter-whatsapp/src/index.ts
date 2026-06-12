@@ -77,7 +77,7 @@ export function normalizeWhatsAppLead(input: WhatsAppInboundContact): Lead {
     countryCode: normalizeText(input.countryCode) || undefined,
     countryName: normalizeText(input.countryName) || undefined,
     sourceChannelIds: ["whatsapp"],
-    lifecycleStage: "contacted",
+    stage: "new",
     createdAt,
     updatedAt,
     metadata: {

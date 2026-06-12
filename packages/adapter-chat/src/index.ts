@@ -53,8 +53,15 @@ export function normalizeChatConversation(
   const times = raw.messages.map((message) => message.sentAt).sort();
   const firstAt = times[0] ?? new Date(0).toISOString();
   const lastAt = times[times.length - 1] ?? firstAt;
-  // ★규칙: 고객이 보낸(inbound) 메시지가 하나라도 있으면 "contacted".
-  const hasInbound = raw.messages.some((message) => message.direction === "inbound");
+  // ★규칙(F4 팔로업): 마지막 메시지가 고객(inbound)이면 내가 답해야 함, 내가(outbound) 보냈으면 고객 답 대기.
+  const lastMessage = raw.messages.length
+    ? raw.messages.reduce((a, b) => (a.sentAt >= b.sentAt ? a : b))
+    : undefined;
+  const followUp = !lastMessage
+    ? "none"
+    : lastMessage.direction === "inbound"
+      ? "needs_my_reply"
+      : "waiting_on_customer";
 
   const lead: Lead = {
     id: leadId,
@@ -62,7 +69,7 @@ export function normalizeChatConversation(
     companyName: raw.contact.companyName || undefined,
     countryCode: raw.contact.countryCode || undefined,
     sourceChannelIds: [channelId],
-    lifecycleStage: hasInbound ? "contacted" : "new",
+    stage: "new",
     createdAt: firstAt,
     updatedAt: lastAt
   };
@@ -74,6 +81,7 @@ export function normalizeChatConversation(
     externalThreadId: raw.threadId,
     status: "open",
     priority: "normal",
+    followUp,
     lastMessageAt: lastAt,
     createdAt: firstAt,
     updatedAt: lastAt

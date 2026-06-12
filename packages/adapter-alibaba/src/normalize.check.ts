@@ -9,6 +9,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { FOLLOW_UP_STATES, LEAD_STAGES } from "@qualiflow/core";
+
 import { createAlibabaAdapterFromConversations } from "./index.js";
 import { normalizeAlibabaConversation } from "./normalize.js";
 import type { AlibabaRawConversation } from "./raw-types.js";
@@ -40,7 +42,11 @@ assert("inbound 작성자 역할이 lead", messages[1].author.role === "lead");
 // ── lead(바이어) 변환 점검 ──
 assert("바이어 이름이 lead.displayName으로", lead.displayName === "Sample Buyer");
 assert("국가코드가 lead.countryCode로", lead.countryCode === "KR");
-assert("inbound 있으니 lifecycle=contacted", lead.lifecycleStage === "contacted");
+assert("lead.stage = new (단계 진행은 CRM 몫)", lead.stage === "new");
+assert("마지막이 inbound라 followUp = needs_my_reply", thread.followUp === "needs_my_reply");
+// 계약 검사: 생산된 값이 core 허용집합 안에 있는지
+assert("lead.stage ∈ LEAD_STAGES", (LEAD_STAGES as readonly string[]).includes(lead.stage));
+assert("thread.followUp ∈ FOLLOW_UP_STATES", (FOLLOW_UP_STATES as readonly string[]).includes(thread.followUp));
 
 // ── 어댑터에 끼운 뒤 표준 인터페이스로 나오는지(raw → normalize → adapter) ──
 const adapter = createAlibabaAdapterFromConversations([raw]);

@@ -17,9 +17,8 @@ const CHANNEL_ID = "alibaba";
 const DEFAULT_THREAD_STATUS = "open";
 const DEFAULT_THREAD_PRIORITY = "normal";
 
-// lead(바이어) 단계 기본값. 바이어가 보낸 메시지가 있으면 "접촉됨"으로 본다(아래 ★규칙).
-const LIFECYCLE_NEW = "new";
-const LIFECYCLE_CONTACTED = "contacted";
+// lead 퍼널 단계: 어댑터는 항상 "new"로 만든다(단계 진행은 CRM/수동의 몫).
+// "고객이 답했는지"는 stage가 아니라 thread.followUp(needs_my_reply)이 표현한다.
 
 // ────────────────────────────────────────────────────────────────────────
 
@@ -87,16 +86,13 @@ export function normalizeAlibabaContact(raw: AlibabaRawConversation): Lead {
   const createdAt = sendTimes.length ? toIso(Math.min(...sendTimes)) : toIso(0);
   const updatedAt = sendTimes.length ? toIso(Math.max(...sendTimes)) : createdAt;
 
-  // ★규칙: 바이어가 보낸(inbound) 메시지가 하나라도 있으면 "contacted", 없으면 "new".
-  const hasInbound = raw.messages.some((message) => message.sender?.targetId !== raw.owner.aliId);
-
   return {
     id: toEntityId("lead_alibaba", contact.aliId ?? contact.loginId ?? "unknown"),
     displayName: contact.name ?? contact.loginId ?? "Unknown Alibaba buyer",
     companyName: contact.companyName || undefined,
     countryCode: contact.complianceCountryCode || undefined,
     sourceChannelIds: [CHANNEL_ID],
-    lifecycleStage: hasInbound ? LIFECYCLE_CONTACTED : LIFECYCLE_NEW,
+    stage: "new",
     createdAt,
     updatedAt,
     metadata: {
@@ -133,6 +129,14 @@ export function normalizeAlibabaConversation(raw: AlibabaRawConversation): {
   const lastSentAt = sendTimes.length ? toIso(Math.max(...sendTimes)) : firstSentAt;
   const conversationCode = raw.messages[0]?.conversationCode ?? "unknown";
 
+  // ★규칙(F4 팔로업): 마지막 메시지가 고객(inbound)이면 내가 답해야 함, 내가(outbound) 보냈으면 고객 답 대기.
+  const lastMessage = messages.length ? messages.reduce((a, b) => (a.sentAt >= b.sentAt ? a : b)) : undefined;
+  const followUp = !lastMessage
+    ? "none"
+    : lastMessage.direction === "inbound"
+      ? "needs_my_reply"
+      : "waiting_on_customer";
+
   const thread: Thread = {
     id: conversationCode,
     leadId,
@@ -140,6 +144,7 @@ export function normalizeAlibabaConversation(raw: AlibabaRawConversation): {
     externalThreadId: conversationCode,
     status: DEFAULT_THREAD_STATUS,
     priority: DEFAULT_THREAD_PRIORITY,
+    followUp,
     lastMessageAt: lastSentAt,
     createdAt: firstSentAt,
     updatedAt: lastSentAt

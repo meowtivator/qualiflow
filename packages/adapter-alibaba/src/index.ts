@@ -176,7 +176,7 @@ export function normalizeAlibabaLead(input: AlibabaInboundBuyer): Lead {
     countryCode: normalizeText(input.countryCode) || undefined,
     countryName: normalizeText(input.countryName) || undefined,
     sourceChannelIds: ["alibaba"],
-    lifecycleStage: input.inquiryText ? "contacted" : "new",
+    stage: "new",
     createdAt,
     updatedAt,
     metadata: {
