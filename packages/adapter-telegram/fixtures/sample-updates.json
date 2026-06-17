@@ -1,0 +1,44 @@
+[
+  {
+    "update_id": 1000001,
+    "message": {
+      "message_id": 11,
+      "date": 1781510400,
+      "chat": {
+        "id": 7001001,
+        "type": "private",
+        "first_name": "Olivia",
+        "last_name": "Grant",
+        "username": "olivia_beauty"
+      },
+      "from": {
+        "id": 7001001,
+        "is_bot": false,
+        "first_name": "Olivia",
+        "last_name": "Grant",
+        "username": "olivia_beauty"
+      },
+      "text": "Hello, can you share MOQ and sample options for the clinic line?"
+    }
+  },
+  {
+    "update_id": 1000002,
+    "message": {
+      "message_id": 12,
+      "date": 1781510700,
+      "chat": {
+        "id": 7001001,
+        "type": "private",
+        "first_name": "Olivia",
+        "last_name": "Grant",
+        "username": "olivia_beauty"
+      },
+      "from": {
+        "id": 999001,
+        "is_bot": true,
+        "first_name": "QualiFlow"
+      },
+      "text": "Thanks for reaching out. We can share sample options first."
+    }
+  }
+]

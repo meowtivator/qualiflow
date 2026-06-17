@@ -14,6 +14,7 @@
     "@qualiflow/adapter-alibaba": "workspace:*",
     "@qualiflow/adapter-chat": "workspace:*",
     "@qualiflow/adapter-mock": "workspace:*",
+    "@qualiflow/adapter-telegram": "workspace:*",
     "@qualiflow/core": "workspace:*",
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.1",
