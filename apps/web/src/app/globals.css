@@ -226,6 +226,7 @@ a {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
   gap: 12px;
+  height: calc(100vh - 153px);
   min-height: calc(100vh - 153px);
   padding: 16px 20px 20px;
 }
@@ -241,6 +242,11 @@ a {
 .thread-panel,
 .context-panel {
   overflow: hidden;
+}
+
+.thread-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .panel-toolbar,
@@ -288,6 +294,9 @@ a {
 
 .thread-list {
   display: grid;
+  min-height: 0;
+  overflow: auto;
+  align-content: start;
 }
 
 .thread-row {
@@ -599,7 +608,10 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  max-height: 116px;
   margin-top: 12px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .channel-chip {
@@ -607,10 +619,14 @@ a {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
   border: 1px solid var(--hairline);
   background: var(--surface-1);
   padding: 7px 9px 7px 28px;
   color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .channel-chip .channel-badge {
@@ -773,6 +789,7 @@ a {
   }
 
   .messenger-layout {
+    height: auto;
     min-height: auto;
   }
 

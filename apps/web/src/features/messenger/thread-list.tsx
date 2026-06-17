@@ -37,7 +37,7 @@ function ThreadPreview({ item, selected }: { item: ThreadListItem; selected: boo
   const nextAction = getMetadataText(thread.metadata?.nextAction, "다음 액션 확인 필요");
 
   return (
-    <Link className={`thread-row ${selected ? "selected" : ""}`} href={`/?thread=${thread.id}`}>
+    <Link className={`thread-row ${selected ? "selected" : ""}`} href={{ pathname: "/", query: { thread: thread.id } }}>
       <div className="lead-avatar">
         <span>{getInitials(lead)}</span>
         <ChannelBadge channel={channel} />
