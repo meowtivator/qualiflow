@@ -213,6 +213,19 @@ export function createAlibabaAdapter(options: CreateAlibabaAdapterOptions = {}):
     id: "alibaba",
     label: "Alibaba",
     channel: BUILT_IN_CHANNELS.alibaba,
+    accountKind: "user_account",
+    authMode: "browser_session",
+    capabilities: ["read_messages", "send_messages", "sync_history"],
+    sessionStorage: "runtime_only",
+    async syncMessages() {
+      return {
+        leads,
+        threads,
+        messages,
+        syncedAt: new Date().toISOString(),
+        connectionStatus: "active"
+      };
+    },
     async listLeads(request) {
       return paginate(leads, request);
     },

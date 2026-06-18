@@ -1,46 +1,33 @@
 import { createChatAdapter, type ChatRawConversation, type ChatRawMessage } from "@qualiflow/adapter-chat";
-import type { BuiltInChannelId, ConversationAdapter, MessageDirection } from "@qualiflow/core";
+import type { ConversationAdapter, MessageDirection } from "@qualiflow/core";
 
-const CHANNEL_ID: BuiltInChannelId = "telegram";
+const CHANNEL_ID = "telegram";
 
-export type TelegramChatType = "private" | "group" | "supergroup" | "channel" | (string & {});
+export type TelegramUserPeerType = "user" | "group" | "supergroup" | "channel" | (string & {});
 
-export type TelegramUser = {
-  id: number;
-  is_bot: boolean;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  language_code?: string;
-};
-
-export type TelegramChat = {
-  id: number;
-  type: TelegramChatType;
+// Runtime connector(MTProto/TDLib/gotd 등)가 만든 사용자 계정 대화 snapshot.
+// Bot API Update가 아니라, 운영자 Telegram 계정에 실제로 보이는 dialog/message를 표현한다.
+export type TelegramUserDialog = {
+  id: string;
+  peerId: string;
+  peerType: TelegramUserPeerType;
   title?: string;
   username?: string;
-  first_name?: string;
-  last_name?: string;
+  messages: TelegramUserMessage[];
 };
 
-export type TelegramMessage = {
-  message_id: number;
-  date: number;
-  chat: TelegramChat;
-  from?: TelegramUser;
+export type TelegramUserMessage = {
+  id: string;
+  dialogId: string;
+  peerId: string;
   text?: string;
-  caption?: string;
-};
-
-export type TelegramUpdate = {
-  update_id: number;
-  message?: TelegramMessage;
-  edited_message?: TelegramMessage;
+  sentAt: string | number;
+  outgoing: boolean;
+  senderId?: string;
+  senderDisplayName?: string;
 };
 
 export type TelegramNormalizeOptions = {
-  botUserId?: number;
-  operatorUserIds?: number[];
   operatorDisplayName?: string;
 };
 
@@ -57,120 +44,82 @@ function toEntityId(prefix: string, value: string) {
   return `${prefix}_${normalized || "unknown"}`;
 }
 
-function toIsoFromTelegramSeconds(value: number) {
-  return new Date(value * 1_000).toISOString();
-}
-
-function getUserDisplayName(user?: TelegramUser) {
-  if (!user) {
-    return undefined;
+function toIsoDateTime(value: string | number) {
+  if (typeof value === "string") {
+    return value;
   }
 
-  return normalizeText([user.first_name, user.last_name].filter(Boolean).join(" ")) || user.username;
+  // Telegram client libraries commonly expose unix seconds. Some wrappers expose ms.
+  return new Date(value < 1_000_000_000_000 ? value * 1_000 : value).toISOString();
 }
 
-function getChatDisplayName(chat: TelegramChat, user?: TelegramUser) {
-  return normalizeText(chat.title) || normalizeText([chat.first_name, chat.last_name].filter(Boolean).join(" ")) || getUserDisplayName(user) || chat.username;
+function resolveDirection(message: TelegramUserMessage): MessageDirection {
+  return message.outgoing ? "outbound" : "inbound";
 }
 
-function getMessageText(message: TelegramMessage) {
-  return normalizeText(message.text) || normalizeText(message.caption);
-}
-
-function resolveDirection(message: TelegramMessage, options: TelegramNormalizeOptions): MessageDirection {
-  const senderId = message.from?.id;
-
-  if (!senderId) {
-    return "inbound";
-  }
-
-  if (options.botUserId === senderId || options.operatorUserIds?.includes(senderId)) {
-    return "outbound";
-  }
-
-  return "inbound";
-}
-
-function getThreadId(message: TelegramMessage) {
-  return toEntityId("thread_telegram", String(message.chat.id));
-}
-
-function getContactId(message: TelegramMessage) {
-  const externalId = message.chat.type === "private" ? (message.from?.id ?? message.chat.id) : message.chat.id;
-  return toEntityId("contact_telegram", String(externalId));
-}
-
-function normalizeTelegramMessage(message: TelegramMessage, options: TelegramNormalizeOptions): ChatRawMessage | null {
-  const text = getMessageText(message);
+function normalizeTelegramUserMessage(
+  dialog: TelegramUserDialog,
+  message: TelegramUserMessage,
+  options: TelegramNormalizeOptions
+): ChatRawMessage | null {
+  const text = normalizeText(message.text);
 
   if (!text) {
     return null;
   }
 
-  const direction = resolveDirection(message, options);
+  const direction = resolveDirection(message);
 
   return {
-    id: toEntityId("msg_telegram", `${message.chat.id}_${message.message_id}`),
+    id: toEntityId("msg_telegram", `${message.dialogId}_${message.id}`),
     text,
-    sentAt: toIsoFromTelegramSeconds(message.date),
+    sentAt: toIsoDateTime(message.sentAt),
     direction,
     authorName:
       direction === "outbound"
         ? (options.operatorDisplayName ?? "운영자")
-        : (getUserDisplayName(message.from) ?? getChatDisplayName(message.chat, message.from) ?? "Telegram user")
+        : (normalizeText(message.senderDisplayName) || normalizeText(dialog.title) || "Telegram user")
   };
 }
 
-export function normalizeTelegramUpdates(
-  updates: TelegramUpdate[],
+export function normalizeTelegramUserDialogs(
+  dialogs: TelegramUserDialog[],
   options: TelegramNormalizeOptions = {}
 ): ChatRawConversation[] {
-  const conversations = new Map<string, ChatRawConversation>();
+  return dialogs
+    .map((dialog) => {
+      const messages = dialog.messages
+        .map((message) => normalizeTelegramUserMessage(dialog, message, options))
+        .filter((message): message is ChatRawMessage => message !== null)
+        .sort((a, b) => a.sentAt.localeCompare(b.sentAt));
 
-  for (const update of updates) {
-    const message = update.message ?? update.edited_message;
-
-    if (!message) {
-      continue;
-    }
-
-    const normalizedMessage = normalizeTelegramMessage(message, options);
-
-    if (!normalizedMessage) {
-      continue;
-    }
-
-    const threadId = getThreadId(message);
-    const existing = conversations.get(threadId);
-
-    if (existing) {
-      existing.messages.push(normalizedMessage);
-      continue;
-    }
-
-    conversations.set(threadId, {
-      threadId,
-      contact: {
-        id: getContactId(message),
-        name: getChatDisplayName(message.chat, message.from) ?? "Telegram user"
-      },
-      messages: [normalizedMessage]
-    });
-  }
-
-  return [...conversations.values()].map((conversation) => ({
-    ...conversation,
-    messages: [...conversation.messages].sort((a, b) => a.sentAt.localeCompare(b.sentAt))
-  }));
+      return {
+        threadId: toEntityId("thread_telegram", dialog.id),
+        contact: {
+          id: toEntityId("contact_telegram", dialog.peerId),
+          name: normalizeText(dialog.title) || normalizeText(dialog.username) || dialog.peerId
+        },
+        messages
+      };
+    })
+    .filter((conversation) => conversation.messages.length > 0);
 }
 
-export function createTelegramAdapterFromUpdates(
-  updates: TelegramUpdate[],
+export function createTelegramAdapterFromUserDialogs(
+  dialogs: TelegramUserDialog[],
   options: TelegramNormalizeOptions = {}
 ): ConversationAdapter {
-  return createChatAdapter(CHANNEL_ID, normalizeTelegramUpdates(updates, options));
+  return createChatAdapter(CHANNEL_ID, normalizeTelegramUserDialogs(dialogs, options), {
+    accountKind: "user_account",
+    authMode: "phone_code",
+    capabilities: ["read_messages", "send_messages", "sync_history", "realtime_events", "read_receipts"]
+  });
 }
 
 export function createTelegramAdapterFromConversations(conversations: ChatRawConversation[]): ConversationAdapter {
-  return createChatAdapter(CHANNEL_ID, conversations);
+  return createChatAdapter(CHANNEL_ID, conversations, {
+    accountKind: "user_account",
+    authMode: "phone_code",
+    capabilities: ["read_messages", "send_messages", "sync_history", "realtime_events", "read_receipts"]
+  });
 }

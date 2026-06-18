@@ -19,6 +19,8 @@ export type WhatsAppInboundContact = {
   updatedAt?: string;
 };
 
+export type WhatsAppUserSessionContact = WhatsAppInboundContact;
+
 export type WhatsAppInboundTextMessage = {
   externalMessageId: string;
   waId: string;
@@ -29,6 +31,8 @@ export type WhatsAppInboundTextMessage = {
   profileName?: string;
   phoneNumberId?: string;
 };
+
+export type WhatsAppUserSessionTextMessage = WhatsAppInboundTextMessage;
 
 export type CreateWhatsAppAdapterOptions = {
   leads?: Lead[];
@@ -141,6 +145,19 @@ export function createWhatsAppAdapter(options: CreateWhatsAppAdapterOptions = {}
     id: "whatsapp",
     label: "WhatsApp",
     channel: BUILT_IN_CHANNELS.whatsapp,
+    accountKind: "user_account",
+    authMode: "qr_pairing",
+    capabilities: ["read_messages", "send_messages", "sync_history", "realtime_events", "read_receipts", "attachments"],
+    sessionStorage: "runtime_only",
+    async syncMessages() {
+      return {
+        leads,
+        threads,
+        messages,
+        syncedAt: new Date().toISOString(),
+        connectionStatus: "active"
+      };
+    },
     async listLeads(request) {
       return paginate(leads, request);
     },

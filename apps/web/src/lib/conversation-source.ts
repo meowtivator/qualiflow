@@ -13,7 +13,10 @@ import {
   mockConversationAdapter,
   mockQualifications
 } from "@qualiflow/adapter-mock";
-import { createTelegramAdapterFromUpdates, type TelegramUpdate } from "@qualiflow/adapter-telegram";
+import {
+  createTelegramAdapterFromUserDialogs,
+  type TelegramUserDialog
+} from "@qualiflow/adapter-telegram";
 import {
   BUILT_IN_CHANNELS,
   type BuiltInChannelId,
@@ -28,7 +31,7 @@ import {
 // 실제 채널 데이터(실제 고객 개인정보)는 절대 git에 안 올린다.
 // gitignore된 .data/ 폴더에서 채널별 파일을 읽고, 하나도 없으면 mock으로 폴백한다.
 //   .data/alibaba-conversations.json      (AlibabaRawConversation[])
-//   .data/telegram-updates.json           (TelegramUpdate[] from Bot API webhook/getUpdates)
+//   .data/telegram-dialogs.json           (TelegramUserDialog[] from MTProto/TDLib connector)
 //   .data/telegram-conversations.json     (ChatRawConversation[])
 //   .data/instagram-conversations.json    (ChatRawConversation[])
 //   .data/whatsapp-conversations.json     (ChatRawConversation[])
@@ -93,13 +96,13 @@ export async function loadConversationSource(): Promise<ConversationSource> {
     adapters.push(createAlibabaAdapterFromConversations(alibaba));
   }
 
-  const telegramUpdates = await readJsonArray<TelegramUpdate>("telegram-updates.json");
-  if (telegramUpdates) {
-    adapters.push(createTelegramAdapterFromUpdates(telegramUpdates));
+  const telegramDialogs = await readJsonArray<TelegramUserDialog>("telegram-dialogs.json");
+  if (telegramDialogs) {
+    adapters.push(createTelegramAdapterFromUserDialogs(telegramDialogs));
   } else {
     const telegramConversations = await readJsonArray<ChatRawConversation>("telegram-conversations.json");
     if (telegramConversations) {
-      adapters.push(createChatAdapter("telegram", telegramConversations));
+      adapters.push(createChatAdapter("telegram", telegramConversations, { authMode: "phone_code" }));
     }
   }
 

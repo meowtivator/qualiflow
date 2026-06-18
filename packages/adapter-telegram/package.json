@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Telegram Bot API adapter for QualiFlow.",
+  "description": "Telegram user-account dialog adapter for QualiFlow.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

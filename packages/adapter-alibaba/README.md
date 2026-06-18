@@ -9,6 +9,8 @@ This package does not scrape Alibaba. It defines the first integration boundary:
 - build search candidates for sub-channel discovery such as Instagram, LinkedIn, and Facebook
 - run optional headless discovery against generated search URLs
 
+The product direction is an operator-owned Alibaba/OneTalk browser session. Login state, cookies, Playwright profiles, and relogin handling live in the headless/runtime connector, not in the pure adapter entrypoint.
+
 ## Headless discovery
 
 The headless runner reads a JSON dataset, generates buyer/company/location search URLs, opens them with Playwright, and returns matched website/social links.

@@ -1,29 +1,32 @@
 # @qualiflow/adapter-telegram
 
-Telegram Bot API adapter for QualiFlow.
+Telegram user-account dialog adapter for QualiFlow.
 
-This package handles the first official-API channel verification path:
+This package is not a Telegram Bot API adapter. Bot API only receives messages sent to the bot, so it does not fit QualiFlow's main requirement: syncing the operator's real Telegram inbox.
 
-- accept Telegram Bot API `Update[]` payloads
-- normalize message updates into `ChatRawConversation[]`
-- expose a standard QualiFlow `ConversationAdapter`
-
-It does not store bot tokens, call Telegram APIs, or send messages. Webhook receivers and polling workers should live in a server/runtime layer and pass captured updates into this adapter.
+This package expects a runtime connector such as MTProto, TDLib, or gotd to log in as the user account and pass captured dialogs/messages into the adapter.
 
 ```ts
-import { createTelegramAdapterFromUpdates } from "@qualiflow/adapter-telegram";
+import { createTelegramAdapterFromUserDialogs } from "@qualiflow/adapter-telegram";
 
-const adapter = createTelegramAdapterFromUpdates(updates, {
-  botUserId: 123456789
+const adapter = createTelegramAdapterFromUserDialogs(dialogs, {
+  operatorDisplayName: "Operator"
 });
 ```
 
 Supported in this first pass:
 
-- `message.text`
-- `message.caption`
-- `message.from`
-- `message.chat`
-- private, group, supergroup, and channel chat ids
+- user/private dialogs
+- group/supergroup/channel dialog ids
+- text messages
+- inbound/outbound direction using the connector-provided `outgoing` flag
+- user-account adapter metadata: `accountKind=user_account`, `authMode=phone_code`
 
-Unsupported payloads are ignored conservatively.
+Out of scope for this package:
+
+- phone login, QR login, 2FA, or session file storage
+- direct MTProto/TDLib API calls
+- secret/token storage
+- actual message sending implementation
+
+Those responsibilities belong in a runtime connector package.

@@ -16,16 +16,16 @@ External channel
 
 | Channel | Preferred sync mode | Notes |
 | --- | --- | --- |
-| Telegram | Webhook or `getUpdates` polling | Official Bot API payloads are stable enough for a first verification adapter. |
-| WhatsApp | Meta webhook | Requires app setup, phone number id, access token, webhook verification. |
-| Instagram | Meta webhook | Requires page/IG business connection and permissions. |
+| Telegram | MTProto/TDLib user-session polling or event stream | Bot API is not product-fit because it only sees messages sent to the bot. |
+| WhatsApp | User-account QR pairing connector, or official business API where available | The adapter contract is account-based; runtime choice depends on deployment constraints. |
+| Instagram | User-account/session connector, or Meta professional-account API where available | The adapter contract should normalize the operator's inbox, not a public bot feed. |
 | Alibaba | Local browser/session polling | No official inbox webhook in this prototype. Treat it as a periodic extractor with manual re-login. |
 
 ## Data Boundary
 
 The runtime layer owns credentials and sessions. The adapter layer only receives raw payloads and returns normalized data.
 
-- Tokens, cookies, browser profiles, and webhook secrets stay outside `packages/*`.
+- Tokens, cookies, browser profiles, QR sessions, phone-code sessions, and webhook secrets stay outside `packages/*`.
 - `packages/adapter-*` must be deterministic and testable with fixtures.
 - `packages/core` remains the shared contract: `Lead`, `ChannelIdentity`, `Thread`, `Message`, `Qualification`.
 
@@ -42,14 +42,14 @@ The durable store should upsert in this order:
 
 ## Cursor Strategy
 
-- Official API channels store `sync_cursor` on `channel_connections`.
-- Webhook channels can keep provider event ids for dedupe.
+- User-account connectors store `sync_cursor` on `channel_connections`.
+- Webhook-capable channels can keep provider event ids for dedupe.
 - Alibaba stores the last seen `conversationCode` + message id/time as a cursor, but session validity is controlled by the local browser profile.
 
 ## Verification Order
 
 1. Normalize fixture payloads into `ConversationAdapter`.
 2. Render normalized conversations in the web inbox through `.data/*.json`.
-3. Add server-side webhook/polling receiver.
+3. Add account-session connector runtime for polling/event streaming.
 4. Persist normalized records into Supabase.
 5. Replace file-based `.data` loading with DB-backed `ConversationAdapter`.

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "dialog_2034007076723",
+    "peerId": "2034007076723",
+    "peerType": "user",
+    "title": "Olivia Grant",
+    "username": "olivia_beauty",
+    "messages": [
+      {
+        "id": "101",
+        "dialogId": "dialog_2034007076723",
+        "peerId": "2034007076723",
+        "text": "Hi, we run a beauty clinic in the US. Can you share sample options?",
+        "sentAt": 1780219200,
+        "outgoing": false,
+        "senderId": "2034007076723",
+        "senderDisplayName": "Olivia Grant"
+      },
+      {
+        "id": "102",
+        "dialogId": "dialog_2034007076723",
+        "peerId": "2034007076723",
+        "text": "Yes, we can share sample options first. Please send your clinic website and target order volume.",
+        "sentAt": 1780221000,
+        "outgoing": true,
+        "senderId": "me"
+      }
+    ]
+  }
+]

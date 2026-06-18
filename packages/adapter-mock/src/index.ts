@@ -407,7 +407,8 @@ export const mockConversationAdapter: ConversationAdapter = {
       throw new Error(`Thread not found: ${request.threadId}`);
     }
 
-    return {
+    const sentAt = new Date().toISOString();
+    const message: Message = {
       id: `msg_draft_${Date.now()}`,
       threadId: request.threadId,
       leadId: thread.leadId,
@@ -424,7 +425,13 @@ export const mockConversationAdapter: ConversationAdapter = {
         type: "text",
         text: request.text
       },
-      sentAt: new Date().toISOString()
+      sentAt
+    };
+
+    return {
+      message,
+      status: message.status,
+      sentAt
     };
   }
 };
