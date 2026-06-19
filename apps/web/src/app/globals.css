@@ -281,6 +281,11 @@ a {
   background: linear-gradient(0deg, rgba(22, 121, 76, 0.035), rgba(22, 121, 76, 0.035)), var(--surface-1);
 }
 
+.connector-card.checking {
+  border-color: rgba(95, 106, 226, 0.28);
+  background: linear-gradient(0deg, rgba(95, 106, 226, 0.035), rgba(95, 106, 226, 0.035)), var(--surface-1);
+}
+
 .connector-logo-wrap {
   display: grid;
   width: 52px;
@@ -348,9 +353,29 @@ a {
   color: var(--success);
 }
 
-.connector-status.pending {
+.connector-status.checking {
+  background: var(--primary-fill);
+  color: var(--primary);
+}
+
+.connector-status.needs_relogin {
   background: #fff3d8;
   color: var(--warning);
+}
+
+.connector-status.error {
+  background: #fdeaea;
+  color: var(--danger);
+}
+
+.connector-status-spinner {
+  animation: connector-spin 900ms linear infinite;
+}
+
+@keyframes connector-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .connector-actions {
@@ -394,17 +419,6 @@ a {
   color: var(--primary);
 }
 
-.connector-connect-button.success {
-  border-color: var(--success);
-  background: var(--success);
-  color: #ffffff;
-}
-
-.connector-connect-button.success:hover {
-  border-color: #12643f;
-  background: #12643f;
-}
-
 .connector-toast {
   position: sticky;
   z-index: 3;
@@ -430,6 +444,11 @@ a {
 
 .connector-toast.info {
   color: var(--primary);
+}
+
+.connector-toast.warning {
+  border-color: rgba(171, 111, 0, 0.3);
+  color: var(--warning);
 }
 
 .workspace-summary div {
