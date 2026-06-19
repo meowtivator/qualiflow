@@ -240,7 +240,7 @@ a {
   gap: 14px;
   min-width: 0;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 14px;
   background: var(--surface-1);
   padding: 14px;
 }
@@ -251,7 +251,7 @@ a {
   height: 52px;
   place-items: center;
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--surface-2);
 }
 
@@ -277,6 +277,7 @@ a {
   justify-content: center;
   min-height: 34px;
   border: 1px solid var(--primary);
+  border-radius: 10px;
   background: var(--primary);
   color: var(--on-primary);
   font-weight: 650;
