@@ -2,22 +2,39 @@ import type { CSSProperties } from "react";
 
 import type { Channel, Lead } from "@qualiflow/core";
 
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function toKstDate(value: string) {
+  const timestamp = new Date(value).getTime();
+
+  if (Number.isNaN(timestamp)) {
+    return undefined;
+  }
+
+  return new Date(timestamp + KST_OFFSET_MS);
+}
+
 export function formatShortDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "numeric",
-    day: "numeric",
-    timeZone: "Asia/Seoul"
-  }).format(new Date(value));
+  const date = toKstDate(value);
+
+  if (!date) {
+    return "-";
+  }
+
+  return `${date.getUTCMonth() + 1}. ${date.getUTCDate()}.`;
 }
 
 export function formatTime(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    hour12: false,
-    hourCycle: "h23",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Seoul"
-  }).format(new Date(value));
+  const date = toKstDate(value);
+
+  if (!date) {
+    return "--:--";
+  }
+
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+
+  return `${hour}:${minute}`;
 }
 
 export function getMetadataText(value: unknown, fallback = "-") {
