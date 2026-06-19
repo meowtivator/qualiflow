@@ -16,6 +16,10 @@
   --danger: #a33131;
 }
 
+html {
+  height: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -27,6 +31,7 @@ body {
   font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
   font-size: 14px;
   letter-spacing: 0;
+  min-height: 100%;
 }
 
 button {
@@ -41,13 +46,19 @@ a {
 .app-shell {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  min-height: 100vh;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid var(--hairline);
   background: var(--canvas);
   padding: 16px 12px;
@@ -139,9 +150,27 @@ a {
 
 .main {
   min-width: 0;
+  min-height: 0;
+}
+
+.scroll-main,
+.messenger-main {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.scroll-main {
+  overflow: auto;
+}
+
+.messenger-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .topbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -216,6 +245,7 @@ a {
 }
 
 .workspace-summary {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
@@ -310,11 +340,13 @@ a {
 }
 
 .messenger-layout {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
   gap: 12px;
-  height: calc(100vh - 153px);
-  min-height: calc(100vh - 153px);
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 16px 20px 20px;
 }
 
@@ -322,6 +354,7 @@ a {
 .conversation-panel,
 .context-panel {
   min-width: 0;
+  min-height: 0;
   border: 1px solid var(--hairline);
   background: var(--surface-1);
 }
@@ -523,7 +556,7 @@ a {
 
 .message-timeline {
   display: flex;
-  min-height: 360px;
+  min-height: 0;
   flex-direction: column;
   gap: 10px;
   overflow: auto;
@@ -846,27 +879,72 @@ a {
 @media (max-width: 720px) {
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .sidebar {
-    display: block;
+    display: flex;
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
     border-right: 0;
     border-bottom: 1px solid var(--hairline);
+    padding: 10px 12px;
+  }
+
+  .sidebar-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .sidebar-footer {
-    padding-top: 8px;
+    display: flex;
+    flex: 0 0 auto;
+    padding-top: 0;
+  }
+
+  .brand {
+    flex: 0 0 auto;
+    padding: 0;
+  }
+
+  .brand-caption,
+  .nav-label {
+    display: none;
+  }
+
+  .nav-section {
+    margin: 0;
+  }
+
+  .nav-item {
+    width: auto;
+    padding: 8px;
+  }
+
+  .scroll-main,
+  .messenger-main {
+    height: 100%;
+    min-height: 0;
   }
 
   .topbar {
     align-items: flex-start;
     flex-direction: column;
     gap: 10px;
+    min-height: 0;
+    padding: 10px 12px;
+  }
+
+  .topbar .caption {
+    display: none;
   }
 
   .status-group {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     width: 100%;
+    overflow-x: auto;
   }
 
   .status-pill small {
@@ -874,11 +952,24 @@ a {
   }
 
   .workspace-summary,
-  .messenger-layout,
   .connectors-page {
-    grid-template-columns: 1fr;
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .workspace-summary {
+    grid-template-columns: repeat(3, minmax(132px, 1fr));
+    overflow-x: auto;
+    padding-top: 10px;
+  }
+
+  .workspace-summary div {
+    padding: 10px;
+  }
+
+  .workspace-summary strong {
+    margin-top: 6px;
+    font-size: 20px;
   }
 
   .connector-grid {
@@ -887,12 +978,27 @@ a {
   }
 
   .messenger-layout {
-    height: auto;
-    min-height: auto;
+    grid-template-columns: minmax(260px, 34vw) minmax(330px, 1fr) minmax(260px, 32vw);
+    overflow-x: auto;
+    padding-right: 12px;
+    padding-left: 12px;
   }
 
   .message-timeline {
-    min-height: 300px;
+    min-height: 0;
+  }
+
+  .reply-draft {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .reply-draft p {
+    display: none;
+  }
+
+  .reply-textarea {
+    min-height: 64px;
   }
 
   .reply-draft-header,

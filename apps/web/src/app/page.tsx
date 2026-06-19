@@ -145,7 +145,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       <div className="app-shell">
         <AppSidebar currentView="connectors" />
 
-        <main className="main">
+        <main className="main scroll-main">
           <header className="topbar">
             <div>
               <h1 className="page-title">연동 설정</h1>
@@ -184,7 +184,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     return (
       <div className="app-shell">
         <AppSidebar currentView="messenger" />
-        <main className="main">
+        <main className="main messenger-main">
           <section className="messenger-empty">
             <MessageSquare size={24} />
             <h1>대화 데이터가 없습니다</h1>
@@ -213,7 +213,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     <div className="app-shell">
       <AppSidebar currentView="messenger" />
 
-      <main className="main">
+      <main className="main messenger-main">
         <header className="topbar">
           <div>
             <h1 className="page-title">메신저</h1>
