@@ -1,5 +1,7 @@
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Settings } from "lucide-react";
+import Link from "next/link";
 
+import { ConnectorSettings } from "@/features/connectors/connector-settings";
 import { MessengerWorkspace } from "@/features/messenger/messenger-workspace";
 import { loadConversationSource } from "@/lib/conversation-source";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -8,6 +10,7 @@ import { createClient as createServerSupabaseClient } from "@/lib/supabase/serve
 type HomePageProps = {
   searchParams?: Promise<{
     thread?: string | string[];
+    view?: string | string[];
   }>;
 };
 
@@ -23,7 +26,7 @@ async function loadRuntimeStatus(): Promise<RuntimeStatus> {
   if (process.env.QUALIFLOW_DISABLE_AUTH === "1" || process.env.QUALIFLOW_DEMO_PASSWORD) {
     return {
       label: "Demo mode",
-      detail: "임시 게이트 (mock 데이터)",
+      detail: "로컬 연동 테스트",
       tone: "warning",
       showSignOut: false
     };
@@ -100,9 +103,73 @@ async function loadRuntimeStatus(): Promise<RuntimeStatus> {
   }
 }
 
+function AppSidebar({ currentView }: { currentView: "connectors" | "messenger" }) {
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-main">
+        <div className="brand">
+          <div className="brand-mark">Q</div>
+          <div>
+            <span className="brand-title">QualiFlow</span>
+            <span className="brand-caption">Inbound sales inbox</span>
+          </div>
+        </div>
+
+        <nav className="nav-section" aria-label="Workspace">
+          <div className="nav-label">Workspace</div>
+          <Link className={`nav-item ${currentView === "messenger" ? "active" : ""}`} href="/">
+            <MessageSquare size={16} />
+            <span>메신저</span>
+          </Link>
+        </nav>
+      </div>
+
+      <nav className="sidebar-footer" aria-label="Settings">
+        <Link className={`nav-item ${currentView === "connectors" ? "active" : ""}`} href="/?view=connectors">
+          <Settings size={16} />
+          <span>연동 설정</span>
+        </Link>
+      </nav>
+    </aside>
+  );
+}
+
 export default async function HomePage({ searchParams }: HomePageProps) {
   const params = await searchParams;
   const runtimeStatus = await loadRuntimeStatus();
+  const viewParam = Array.isArray(params?.view) ? params.view[0] : params?.view;
+  const currentView = viewParam === "connectors" ? "connectors" : "messenger";
+
+  if (currentView === "connectors") {
+    return (
+      <div className="app-shell">
+        <AppSidebar currentView="connectors" />
+
+        <main className="main">
+          <header className="topbar">
+            <div>
+              <h1 className="page-title">연동 설정</h1>
+              <p className="caption">채널 계정 연결을 시작하고, runtime과 adapter 책임을 분리해 관리합니다.</p>
+            </div>
+            <div className="status-group">
+              <span className={`status-pill ${runtimeStatus.tone}`}>
+                {runtimeStatus.label}
+                {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
+              </span>
+              {runtimeStatus.showSignOut ? (
+                <a className="status-link" href="/auth/sign-out">
+                  로그아웃
+                </a>
+              ) : null}
+            </div>
+          </header>
+
+          <ConnectorSettings />
+        </main>
+      </div>
+    );
+  }
+
   const selectedThreadParam = Array.isArray(params?.thread) ? params.thread[0] : params?.thread;
   const source = await loadConversationSource();
   const [leadPage, threadPage] = await Promise.all([
@@ -116,7 +183,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   if (!selectedThread) {
     return (
       <div className="app-shell">
-        <aside className="sidebar" />
+        <AppSidebar currentView="messenger" />
         <main className="main">
           <section className="messenger-empty">
             <MessageSquare size={24} />
@@ -144,23 +211,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">Q</div>
-          <div>
-            <span className="brand-title">QualiFlow</span>
-            <span className="brand-caption">Inbound sales inbox</span>
-          </div>
-        </div>
-
-        <nav className="nav-section" aria-label="Workspace">
-          <div className="nav-label">Workspace</div>
-          <button className="nav-item active" type="button">
-            <MessageSquare size={16} />
-            <span>메신저</span>
-          </button>
-        </nav>
-      </aside>
+      <AppSidebar currentView="messenger" />
 
       <main className="main">
         <header className="topbar">

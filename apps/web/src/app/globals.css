@@ -45,9 +45,22 @@ a {
 }
 
 .sidebar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   border-right: 1px solid var(--hairline);
   background: var(--canvas);
   padding: 16px 12px;
+}
+
+.sidebar-main {
+  min-width: 0;
+}
+
+.sidebar-footer {
+  display: grid;
+  gap: 6px;
+  padding-top: 16px;
 }
 
 .brand {
@@ -109,6 +122,12 @@ a {
   cursor: pointer;
   padding: 9px 8px;
   text-align: left;
+}
+
+.nav-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-item.active,
@@ -201,6 +220,197 @@ a {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   padding: 16px 20px 0;
+}
+
+.connectors-page {
+  display: grid;
+  gap: 16px;
+  padding: 16px 20px 20px;
+}
+
+.connectors-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 16px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  padding: 18px;
+}
+
+.connectors-hero h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.connectors-hero p {
+  max-width: 760px;
+  margin: 8px 0 0;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+
+.connectors-note {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  border-left: 1px solid var(--hairline);
+  padding-left: 16px;
+}
+
+.connectors-note strong {
+  font-size: 13px;
+}
+
+.connectors-note span {
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.connector-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.connector-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  padding: 16px;
+}
+
+.connector-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.connector-logo {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.connector-logo.alibaba {
+  background: #ff6a00;
+}
+
+.connector-logo.whatsapp {
+  background: #25d366;
+}
+
+.connector-logo.telegram {
+  background: #229ed9;
+}
+
+.connector-logo.instagram {
+  background: linear-gradient(135deg, #f9ce34, #ee2a7b 46%, #6228d7);
+}
+
+.connector-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.connector-card-header span,
+.connector-meta dt,
+.command-block span {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.connector-card p {
+  margin: 0;
+  color: var(--ink-muted);
+  line-height: 1.55;
+}
+
+.connector-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.connector-meta div {
+  display: grid;
+  gap: 3px;
+}
+
+.connector-meta dd {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.connector-details {
+  margin-top: auto;
+}
+
+.connector-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 650;
+  list-style: none;
+}
+
+.connector-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.connector-details[open] summary,
+.connector-details summary:hover {
+  border-color: var(--primary);
+  background: var(--primary-fill);
+  color: var(--primary);
+}
+
+.connector-steps {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--hairline);
+  border-top: 0;
+  background: var(--surface-2);
+  padding: 12px;
+}
+
+.connector-steps ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.command-block {
+  display: grid;
+  gap: 6px;
+}
+
+.command-block code {
+  overflow: auto;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  color: var(--ink);
+  font-size: 12px;
+  padding: 9px;
+  white-space: nowrap;
 }
 
 .workspace-summary div {
@@ -762,8 +972,13 @@ a {
   }
 
   .sidebar {
+    display: block;
     border-right: 0;
     border-bottom: 1px solid var(--hairline);
+  }
+
+  .sidebar-footer {
+    padding-top: 8px;
   }
 
   .topbar {
@@ -782,10 +997,23 @@ a {
   }
 
   .workspace-summary,
-  .messenger-layout {
+  .messenger-layout,
+  .connectors-page {
     grid-template-columns: 1fr;
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .connectors-hero,
+  .connector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .connectors-note {
+    border-top: 1px solid var(--hairline);
+    border-left: 0;
+    padding-top: 12px;
+    padding-left: 0;
   }
 
   .messenger-layout {
