@@ -253,6 +253,7 @@ a {
 }
 
 .connectors-page {
+  position: relative;
   padding: 16px 20px 20px;
 }
 
@@ -275,6 +276,11 @@ a {
   padding: 14px;
 }
 
+.connector-card.connected {
+  border-color: rgba(22, 121, 76, 0.28);
+  background: linear-gradient(0deg, rgba(22, 121, 76, 0.035), rgba(22, 121, 76, 0.035)), var(--surface-1);
+}
+
 .connector-logo-wrap {
   display: grid;
   width: 52px;
@@ -292,6 +298,19 @@ a {
   object-fit: contain;
 }
 
+.connector-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.connector-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .connector-card h2 {
   overflow: hidden;
   margin: 0;
@@ -301,15 +320,58 @@ a {
   white-space: nowrap;
 }
 
+.connector-card p {
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connector-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 0 8px;
+  background: var(--surface-3);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connector-status.connected {
+  background: #e7f6ee;
+  color: var(--success);
+}
+
+.connector-status.pending {
+  background: #fff3d8;
+  color: var(--warning);
+}
+
+.connector-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .connector-connect-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
   min-height: 34px;
   border: 1px solid var(--primary);
   border-radius: 10px;
   background: var(--primary);
   color: var(--on-primary);
+  cursor: pointer;
+  font: inherit;
   font-weight: 650;
   padding: 0 14px;
   white-space: nowrap;
@@ -318,6 +380,56 @@ a {
 .connector-connect-button:hover {
   background: #4e59bf;
   border-color: #4e59bf;
+}
+
+.connector-connect-button.secondary {
+  border-color: var(--hairline-strong);
+  background: var(--surface-1);
+  color: var(--ink-muted);
+}
+
+.connector-connect-button.secondary:hover {
+  border-color: var(--primary);
+  background: var(--primary-fill);
+  color: var(--primary);
+}
+
+.connector-connect-button.success {
+  border-color: var(--success);
+  background: var(--success);
+  color: #ffffff;
+}
+
+.connector-connect-button.success:hover {
+  border-color: #12643f;
+  background: #12643f;
+}
+
+.connector-toast {
+  position: sticky;
+  z-index: 3;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(100%, 520px);
+  margin-bottom: 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.08);
+  color: var(--ink);
+  font-weight: 650;
+  padding: 11px 13px;
+}
+
+.connector-toast.success {
+  border-color: rgba(22, 121, 76, 0.28);
+  color: var(--success);
+}
+
+.connector-toast.info {
+  color: var(--primary);
 }
 
 .workspace-summary div {
