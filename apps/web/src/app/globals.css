@@ -563,6 +563,10 @@ a {
   padding: 16px;
 }
 
+.message-timeline-latest-first {
+  flex-direction: column-reverse;
+}
+
 .message-bubble {
   width: fit-content;
   max-width: min(520px, 86%);

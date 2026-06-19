@@ -2,7 +2,7 @@ import type { Channel, Lead, LeadQualification, Message } from "@qualiflow/core"
 
 import { ChannelBadge } from "./channel-badge";
 import { getInitials, getLeadLabel } from "./format";
-import { MessageBubble } from "./message-bubble";
+import { MessageTimeline } from "./message-timeline";
 import { ReplyDraft } from "./reply-draft";
 
 type ConversationPanelProps = {
@@ -13,6 +13,8 @@ type ConversationPanelProps = {
 };
 
 export function ConversationPanel({ lead, channel, qualification, messages }: ConversationPanelProps) {
+  const orderedMessages = [...messages].sort((a, b) => a.sentAt.localeCompare(b.sentAt));
+
   return (
     <section className="conversation-panel">
       <div className="conversation-header">
@@ -34,11 +36,7 @@ export function ConversationPanel({ lead, channel, qualification, messages }: Co
         </span>
       </div>
 
-      <div className="message-timeline">
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
-        ))}
-      </div>
+      <MessageTimeline messages={orderedMessages} />
 
       <ReplyDraft
         channelLabel={channel.label}
