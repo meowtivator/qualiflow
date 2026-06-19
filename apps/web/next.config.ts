@@ -13,7 +13,8 @@ const nextConfig: NextConfig = {
     "@qualiflow/core",
     "@qualiflow/adapter-mock",
     "@qualiflow/adapter-alibaba",
-    "@qualiflow/adapter-chat"
+    "@qualiflow/adapter-chat",
+    "@qualiflow/adapter-telegram"
   ]
 };
 

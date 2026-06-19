@@ -29,6 +29,7 @@ supabase/
 - 답변 초안 mock 버튼
 - Supabase Auth/DB 연결 준비
 - RLS가 적용된 workspace 기반 DB 스키마
+- gitignored `.data/*.json` 기반 실제 채널 데이터 preview
 
 ## Domain Terms
 
@@ -50,6 +51,21 @@ pnpm run typecheck
 pnpm run lint
 pnpm run build
 ```
+
+## Real-data Preview
+
+실제 채널 추출 결과를 빠르게 확인할 때는 gitignored `apps/web/.data/*.json` 파일을 사용합니다.
+
+```txt
+apps/web/.data/alibaba-conversations.json
+apps/web/.data/telegram-conversations.json
+apps/web/.data/instagram-conversations.json
+apps/web/.data/whatsapp-conversations.json
+```
+
+파일이 있으면 상단 상태 배지가 `Real JSON preview`로 표시되고, 없으면 mock data로 폴백합니다. 공유 배포에서는 `QUALIFLOW_DEMO_PASSWORD`를 설정해 HTTP Basic Auth로 보호합니다.
+
+자세한 배포 절차는 [docs/PREVIEW_DEPLOYMENT.md](docs/PREVIEW_DEPLOYMENT.md)를 봅니다.
 
 ## Supabase Local Check
 

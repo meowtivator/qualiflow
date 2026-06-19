@@ -10,6 +10,8 @@ COPY packages/core/package.json packages/core/package.json
 COPY packages/adapter-mock/package.json packages/adapter-mock/package.json
 COPY packages/adapter-alibaba/package.json packages/adapter-alibaba/package.json
 COPY packages/adapter-chat/package.json packages/adapter-chat/package.json
+COPY packages/adapter-instagram/package.json packages/adapter-instagram/package.json
+COPY packages/adapter-telegram/package.json packages/adapter-telegram/package.json
 COPY packages/adapter-whatsapp/package.json packages/adapter-whatsapp/package.json
 RUN pnpm install --frozen-lockfile
 

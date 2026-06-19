@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { getSupabasePublicConfig } from "./config";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/otp"];
+const PUBLIC_PATHS = ["/healthz", "/login", "/auth/callback", "/auth/otp"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((publicPath) => pathname === publicPath || pathname.startsWith(`${publicPath}/`));

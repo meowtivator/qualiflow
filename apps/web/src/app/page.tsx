@@ -220,6 +220,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <p className="caption">채널별 inbound 문의를 같은 형태로 모아 보고, A 바이어를 우선 관리합니다.</p>
           </div>
           <div className="status-group">
+            <span className={`status-pill ${source.status.tone}`}>
+              {source.status.label}
+              <small>{source.status.detail}</small>
+            </span>
             <span className={`status-pill ${runtimeStatus.tone}`}>
               {runtimeStatus.label}
               {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
