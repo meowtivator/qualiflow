@@ -105,6 +105,25 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  packages/adapter-instagram:
+    dependencies:
+      '@qualiflow/adapter-chat':
+        specifier: workspace:*
+        version: link:../adapter-chat
+      '@qualiflow/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@types/node':
+        specifier: 25.9.1
+        version: 25.9.1
+      tsx:
+        specifier: 4.20.6
+        version: 4.20.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
   packages/adapter-mock:
     dependencies:
       '@qualiflow/core':
