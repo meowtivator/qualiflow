@@ -91,13 +91,15 @@ export function normalizeAlibabaContact(raw: AlibabaRawConversation): Lead {
     displayName: contact.name ?? contact.loginId ?? "Unknown Alibaba buyer",
     companyName: contact.companyName || undefined,
     countryCode: contact.complianceCountryCode || undefined,
+    profileImageUrl: contact.profileImageUrl || undefined,
     sourceChannelIds: [CHANNEL_ID],
     stage: "new",
     createdAt,
     updatedAt,
     metadata: {
       alibabaAliId: contact.aliId ?? null,
-      alibabaLoginId: contact.loginId ?? null
+      alibabaLoginId: contact.loginId ?? null,
+      alibabaProfileImageUrl: contact.profileImageUrl ?? null
     }
   };
 }

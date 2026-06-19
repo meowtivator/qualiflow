@@ -10,7 +10,8 @@ const adapter = createInstagramAdapterFromConversations(
         username: "mirae_beauty_hk",
         displayName: "Mirae Beauty HK",
         companyName: "Mirae Beauty HK",
-        countryCode: "HK"
+        countryCode: "HK",
+        profileImageUrl: "https://example.com/mirae-profile.jpg"
       },
       messages: [
         {
@@ -38,6 +39,10 @@ const result = await adapter.syncMessages?.();
 
 if (!result || result.leads.length !== 1 || result.threads.length !== 1 || result.messages.length !== 2) {
   throw new Error("Instagram normalization check failed");
+}
+
+if (result.leads[0]?.profileImageUrl !== "https://example.com/mirae-profile.jpg") {
+  throw new Error("Instagram profile image normalization failed");
 }
 
 console.log("Instagram normalization check passed");

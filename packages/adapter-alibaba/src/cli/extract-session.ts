@@ -126,7 +126,14 @@ const EXTRACT_IN_PAGE = String.raw`
       loginId: contact.loginId,
       name: contact.name,
       companyName: contact.companyName,
-      complianceCountryCode: contact.complianceCountryCode
+      complianceCountryCode: contact.complianceCountryCode,
+      profileImageUrl:
+        contact.profileImageUrl ||
+        contact.avatarUrl ||
+        contact.avatar ||
+        contact.headImageUrl ||
+        contact.headUrl ||
+        contact.logoUrl
     },
     messages
   };
@@ -174,6 +181,59 @@ const SCROLL_UP_IN_PAGE = String.raw`
 //    않으므로 (…)() 로 감싸 "호출되게" 한다(안 그러면 함수값→undefined→0).
 const EXTRACT_CALL = `(${EXTRACT_IN_PAGE})()`;
 const SCROLL_CALL = `(${SCROLL_UP_IN_PAGE})()`;
+
+function buildReadRowProfileImageScript(cid: string | null, index: number) {
+  const serialized = JSON.stringify({ cid, index });
+
+  return String.raw`
+    (() => {
+      const args = ${serialized};
+      const rows = Array.from(document.querySelectorAll(".contact-item-container"));
+      const row = args.cid
+        ? rows.find((item) => item.getAttribute("data-cid") === args.cid)
+        : rows[args.index];
+
+      if (!row) return undefined;
+
+      function absolutize(value) {
+        if (!value || typeof value !== "string") return undefined;
+        const trimmed = value.trim();
+        if (!trimmed || trimmed.startsWith("data:") || trimmed.startsWith("blob:")) return undefined;
+        try {
+          return new URL(trimmed, location.href).href;
+        } catch {
+          return undefined;
+        }
+      }
+
+      function fromBackground(value) {
+        const match = String(value || "").match(/url\((['"]?)(.*?)\1\)/);
+        return match ? absolutize(match[2]) : undefined;
+      }
+
+      const candidates = [];
+      for (const image of Array.from(row.querySelectorAll("img"))) {
+        candidates.push(image.currentSrc, image.src, image.getAttribute("data-src"), image.getAttribute("data-original"));
+      }
+      for (const element of Array.from(row.querySelectorAll("*"))) {
+        candidates.push(
+          element.getAttribute("data-avatar"),
+          element.getAttribute("data-avatar-url"),
+          element.getAttribute("data-profile-image-url"),
+          element.getAttribute("data-src"),
+          fromBackground(getComputedStyle(element).backgroundImage)
+        );
+      }
+
+      for (const candidate of candidates) {
+        const url = absolutize(candidate);
+        if (url && /^https?:\/\//.test(url)) return url;
+      }
+
+      return undefined;
+    })()
+  `;
+}
 
 async function main() {
   const chromePath = await findChrome();
@@ -264,6 +324,9 @@ async function main() {
     const cid = await row.getAttribute("data-cid").catch(() => null);
     const dataName = await row.getAttribute("data-name").catch(() => null);
     const dataAliId = await row.getAttribute("data-ali-id").catch(() => null);
+    const profileImageUrl = (await page.evaluate(buildReadRowProfileImageScript(cid, index)).catch(() => undefined)) as
+      | string
+      | undefined;
 
     await row.click({ timeout: 5000 }).catch(() => undefined);
     const first = await waitForConversation(cid);
@@ -310,7 +373,8 @@ async function main() {
       contact: {
         ...first.contact,
         name: first.contact.name || dataName || undefined,
-        aliId: first.contact.aliId || dataAliId || undefined
+        aliId: first.contact.aliId || dataAliId || undefined,
+        profileImageUrl: first.contact.profileImageUrl || profileImageUrl
       },
       messages
     });

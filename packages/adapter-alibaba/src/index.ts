@@ -30,6 +30,7 @@ export type AlibabaInboundBuyer = {
   companyName?: string;
   countryCode?: string;
   countryName?: string;
+  profileImageUrl?: string;
   region?: string;
   inquiryText?: string;
   productInterest?: string[];
@@ -175,6 +176,7 @@ export function normalizeAlibabaLead(input: AlibabaInboundBuyer): Lead {
     companyName: normalizeText(input.companyName) || undefined,
     countryCode: normalizeText(input.countryCode) || undefined,
     countryName: normalizeText(input.countryName) || undefined,
+    profileImageUrl: normalizeText(input.profileImageUrl) || undefined,
     sourceChannelIds: ["alibaba"],
     stage: "new",
     createdAt,
@@ -183,6 +185,7 @@ export function normalizeAlibabaLead(input: AlibabaInboundBuyer): Lead {
       alibabaExternalLeadId: input.externalLeadId,
       alibabaPurchaseGrade: input.purchaseGrade ?? null,
       region: normalizeText(input.region) || null,
+      profileImageUrl: normalizeText(input.profileImageUrl) || null,
       sourceUrl: normalizeText(input.sourceUrl) || null,
       inquiryText: normalizeText(input.inquiryText) || null,
       productInterest: input.productInterest ?? [],

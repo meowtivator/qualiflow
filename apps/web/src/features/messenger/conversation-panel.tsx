@@ -1,7 +1,7 @@
 import type { Channel, Lead, LeadQualification, Message } from "@qualiflow/core";
 
-import { ChannelBadge } from "./channel-badge";
-import { getInitials, getLeadLabel } from "./format";
+import { getLeadLabel } from "./format";
+import { LeadAvatar } from "./lead-avatar";
 import { MessageTimeline } from "./message-timeline";
 import { ReplyDraft } from "./reply-draft";
 
@@ -19,10 +19,7 @@ export function ConversationPanel({ lead, channel, qualification, messages }: Co
     <section className="conversation-panel">
       <div className="conversation-header">
         <div className="lead-heading">
-          <div className="lead-avatar large">
-            <span>{getInitials(lead)}</span>
-            <ChannelBadge channel={channel} />
-          </div>
+          <LeadAvatar channel={channel} lead={lead} size="large" />
           <div>
             <div className="eyebrow">{channel.label}</div>
             <h2>{getLeadLabel(lead)}</h2>

@@ -15,6 +15,7 @@ export type WhatsAppInboundContact = {
   phoneNumberId?: string;
   countryCode?: string;
   countryName?: string;
+  profileImageUrl?: string;
   receivedAt: string;
   updatedAt?: string;
 };
@@ -29,6 +30,7 @@ export type WhatsAppInboundTextMessage = {
   leadId?: string;
   threadId?: string;
   profileName?: string;
+  profileImageUrl?: string;
   phoneNumberId?: string;
 };
 
@@ -80,6 +82,7 @@ export function normalizeWhatsAppLead(input: WhatsAppInboundContact): Lead {
     displayName: normalizeText(input.profileName) || normalizedWaId,
     countryCode: normalizeText(input.countryCode) || undefined,
     countryName: normalizeText(input.countryName) || undefined,
+    profileImageUrl: normalizeText(input.profileImageUrl) || undefined,
     sourceChannelIds: ["whatsapp"],
     stage: "new",
     createdAt,
@@ -108,7 +111,8 @@ export function normalizeWhatsAppTextMessage(input: WhatsAppInboundTextMessage):
     visibility: "internal",
     author: {
       displayName: normalizeText(input.profileName) || normalizedWaId,
-      role: "lead"
+      role: "lead",
+      avatarUrl: normalizeText(input.profileImageUrl) || undefined
     },
     content: {
       type: "text",

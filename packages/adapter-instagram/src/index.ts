@@ -20,6 +20,7 @@ export type InstagramProfile = {
   displayName?: string;
   companyName?: string;
   countryCode?: string;
+  profileImageUrl?: string;
 };
 
 export type InstagramMessage = {
@@ -111,7 +112,8 @@ export function normalizeInstagramConversations(
             normalizeText(conversation.profile.username) ||
             conversation.profile.id,
           companyName: normalizeText(conversation.profile.companyName) || undefined,
-          countryCode: normalizeText(conversation.profile.countryCode) || undefined
+          countryCode: normalizeText(conversation.profile.countryCode) || undefined,
+          profileImageUrl: normalizeText(conversation.profile.profileImageUrl) || undefined
         },
         messages
       };

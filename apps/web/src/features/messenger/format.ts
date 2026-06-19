@@ -5,14 +5,18 @@ import type { Channel, Lead } from "@qualiflow/core";
 export function formatShortDate(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
     month: "numeric",
-    day: "numeric"
+    day: "numeric",
+    timeZone: "Asia/Seoul"
   }).format(new Date(value));
 }
 
 export function formatTime(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
+    hour12: false,
+    hourCycle: "h23",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
+    timeZone: "Asia/Seoul"
   }).format(new Date(value));
 }
 

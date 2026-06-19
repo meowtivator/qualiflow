@@ -13,6 +13,7 @@ export type TelegramUserDialog = {
   peerType: TelegramUserPeerType;
   title?: string;
   username?: string;
+  profileImageUrl?: string;
   messages: TelegramUserMessage[];
 };
 
@@ -97,7 +98,8 @@ export function normalizeTelegramUserDialogs(
         threadId: toEntityId("thread_telegram", dialog.id),
         contact: {
           id: toEntityId("contact_telegram", dialog.peerId),
-          name: normalizeText(dialog.title) || normalizeText(dialog.username) || dialog.peerId
+          name: normalizeText(dialog.title) || normalizeText(dialog.username) || dialog.peerId,
+          profileImageUrl: normalizeText(dialog.profileImageUrl) || undefined
         },
         messages
       };

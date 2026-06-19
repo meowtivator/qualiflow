@@ -32,6 +32,7 @@ export type ChatRawContact = {
   name?: string;
   companyName?: string;
   countryCode?: string;
+  profileImageUrl?: string;
 };
 
 export type ChatRawConversation = {
@@ -77,6 +78,7 @@ export function normalizeChatConversation(
     displayName: raw.contact.name ?? raw.contact.id,
     companyName: raw.contact.companyName || undefined,
     countryCode: raw.contact.countryCode || undefined,
+    profileImageUrl: raw.contact.profileImageUrl || undefined,
     sourceChannelIds: [channelId],
     stage: "new",
     createdAt: firstAt,
@@ -107,7 +109,8 @@ export function normalizeChatConversation(
     visibility: "client_visible",
     author: {
       displayName: message.authorName ?? (message.direction === "outbound" ? "운영자" : (raw.contact.name ?? "고객")),
-      role: message.direction === "outbound" ? "operator" : "lead"
+      role: message.direction === "outbound" ? "operator" : "lead",
+      avatarUrl: message.direction === "inbound" ? raw.contact.profileImageUrl : undefined
     },
     content: { type: "text", text: message.text },
     sentAt: message.sentAt
