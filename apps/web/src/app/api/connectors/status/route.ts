@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -9,47 +9,97 @@ type ConnectorStatusResponse = {
   channel: string;
   checkedAt: string;
   detail: string;
-  source: "local_data" | "runtime_missing";
+  source: "connection_status" | "runtime_missing";
   status: ConnectorStatus;
 };
 
-const CONNECTOR_FILES: Record<string, string[]> = {
-  alibaba: ["alibaba-conversations.json"],
-  instagram: ["instagram-conversations.json"],
-  telegram: ["telegram-dialogs.json", "telegram-conversations.json"],
-  whatsapp: ["whatsapp-conversations.json"]
-};
+const SUPPORTED_CHANNELS = new Set(["alibaba", "instagram", "telegram", "whatsapp"]);
+const CONNECTOR_STATUSES = new Set<ConnectorStatus>(["disconnected", "active", "needs_relogin", "error"]);
 
 const DATA_DIR_CANDIDATES = [
   path.join(/*turbopackIgnore: true*/ process.cwd(), ".data"),
   path.join(/*turbopackIgnore: true*/ process.cwd(), "apps", "web", ".data")
 ];
 
-async function hasReadableData(fileName: string) {
+type RuntimeStatusRecord = {
+  channel?: unknown;
+  checkedAt?: unknown;
+  detail?: unknown;
+  status?: unknown;
+};
+
+function normalizeRuntimeStatus(channel: string, value: unknown): ConnectorStatusResponse | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as RuntimeStatusRecord;
+  const status = typeof record.status === "string" ? record.status : undefined;
+
+  if (!status || !CONNECTOR_STATUSES.has(status as ConnectorStatus)) {
+    return undefined;
+  }
+
+  return {
+    channel,
+    checkedAt: typeof record.checkedAt === "string" ? record.checkedAt : new Date().toISOString(),
+    detail:
+      typeof record.detail === "string"
+        ? record.detail
+        : status === "active"
+          ? "채널 런타임이 로그인 세션을 확인했습니다."
+          : "채널 런타임이 아직 로그인 세션을 확인하지 못했습니다.",
+    source: "connection_status",
+    status: status as ConnectorStatus
+  };
+}
+
+async function readJsonFile(filePath: string): Promise<unknown | undefined> {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8")) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+async function readRuntimeStatus(channel: string): Promise<ConnectorStatusResponse | undefined> {
   for (const dataDir of DATA_DIR_CANDIDATES) {
-    const filePath = path.join(dataDir, fileName);
+    const perChannelStatus = await readJsonFile(path.join(dataDir, `${channel}-connection.json`));
+    const normalizedPerChannel = normalizeRuntimeStatus(channel, perChannelStatus);
 
-    try {
-      await access(filePath);
-      const parsed = JSON.parse(await readFile(filePath, "utf8")) as unknown;
+    if (normalizedPerChannel) {
+      return normalizedPerChannel;
+    }
 
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return true;
+    const connectorStatus = await readJsonFile(path.join(dataDir, "connector-status.json"));
+
+    if (Array.isArray(connectorStatus)) {
+      const matched = connectorStatus.find((item) => {
+        return item && typeof item === "object" && (item as RuntimeStatusRecord).channel === channel;
+      });
+      const normalizedMatched = normalizeRuntimeStatus(channel, matched);
+
+      if (normalizedMatched) {
+        return normalizedMatched;
       }
-    } catch {
-      // A missing or malformed local artifact only means this connector runtime
-      // has not written a readable status/data file yet.
+    }
+
+    if (connectorStatus && typeof connectorStatus === "object" && channel in connectorStatus) {
+      const normalizedMapped = normalizeRuntimeStatus(channel, (connectorStatus as Record<string, unknown>)[channel]);
+
+      if (normalizedMapped) {
+        return normalizedMapped;
+      }
     }
   }
 
-  return false;
+  return undefined;
 }
 
 async function resolveConnectorStatus(channel: string): Promise<ConnectorStatusResponse> {
-  const fileNames = CONNECTOR_FILES[channel];
   const checkedAt = new Date().toISOString();
 
-  if (!fileNames) {
+  if (!SUPPORTED_CHANNELS.has(channel)) {
     return {
       channel,
       checkedAt,
@@ -59,24 +109,18 @@ async function resolveConnectorStatus(channel: string): Promise<ConnectorStatusR
     };
   }
 
-  for (const fileName of fileNames) {
-    if (await hasReadableData(fileName)) {
-      return {
-        channel,
-        checkedAt,
-        detail: "채널 런타임에서 추출한 대화 데이터가 확인되었습니다.",
-        source: "local_data",
-        status: "active"
-      };
-    }
+  const runtimeStatus = await readRuntimeStatus(channel);
+
+  if (runtimeStatus) {
+    return runtimeStatus;
   }
 
   return {
     channel,
     checkedAt,
-    detail: "아직 채널 런타임에서 연결 상태를 확인하지 못했습니다.",
+    detail: "아직 연결된 계정이 없습니다. 연결 버튼을 눌러 로그인을 시작하세요.",
     source: "runtime_missing",
-    status: "needs_relogin"
+    status: "disconnected"
   };
 }
 

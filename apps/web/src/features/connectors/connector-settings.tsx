@@ -58,7 +58,7 @@ type ToastState = {
 type ConnectorStatusResponse = {
   checkedAt: string;
   detail: string;
-  source: "local_data" | "runtime_missing";
+  source: "connection_status" | "runtime_missing";
   status: "disconnected" | "active" | "needs_relogin" | "error";
 };
 
@@ -165,6 +165,10 @@ function getConnectorDescription(status: ConnectorStatus, state?: ConnectorState
     return state?.detail ?? "연결 상태 확인 중 문제가 발생했습니다.";
   }
 
+  if (status === "idle" && state?.detail) {
+    return state.detail;
+  }
+
   return "계정 로그인 후 서버가 연결 상태를 자동으로 확인합니다.";
 }
 
@@ -228,6 +232,25 @@ export function ConnectorSettings() {
       }
 
       if (options.keepIdleOnMissing && !currentState) {
+        return;
+      }
+
+      if (status.status === "disconnected") {
+        if (currentState?.status === "checking" && isStillWithinPollingWindow(currentState.openedAt)) {
+          updateConnectorState(connector.id, {
+            ...currentState,
+            checkedAt: status.checkedAt,
+            detail: status.detail,
+            status: "checking"
+          });
+          return;
+        }
+
+        updateConnectorState(connector.id, {
+          checkedAt: status.checkedAt,
+          detail: status.detail,
+          status: "idle"
+        });
         return;
       }
 
