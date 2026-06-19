@@ -40,8 +40,10 @@ function requireDemoPassword(request: NextRequest): NextResponse | null {
 }
 
 export async function updateSession(request: NextRequest) {
+  const isPublic = isPublicPath(request.nextUrl.pathname);
+
   // 1) 데모 비번 게이트가 켜져 있으면 무엇보다 먼저 검사. 틀리면 여기서 401로 끝낸다.
-  const demoGate = requireDemoPassword(request);
+  const demoGate = isPublic ? null : requireDemoPassword(request);
   if (demoGate) {
     return demoGate;
   }
@@ -76,7 +78,7 @@ export async function updateSession(request: NextRequest) {
   const currentPath = `${nextUrl.pathname}${nextUrl.search}`;
 
   // authDisabled가 true면 비로그인 사용자도 막지 않는다(데모 공개용).
-  if (!authDisabled && !user && !isPublicPath(nextUrl.pathname)) {
+  if (!authDisabled && !user && !isPublic) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.search = `?next=${encodeURIComponent(currentPath)}`;
