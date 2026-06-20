@@ -40,6 +40,8 @@ The durable store should upsert in this order:
 5. `messages` - external message id deduped per channel thread.
 6. `qualifications` / `draft_suggestions` - model or human output.
 
+`channel_connections` is account-scoped. One workspace can have multiple Alibaba, Instagram, Telegram, or WhatsApp accounts, and those accounts can belong to different users. The row stores ownership, status, capabilities, cursor, and a `session_ref` pointer only. It never stores cookies, passwords, QR sessions, or phone-code artifacts.
+
 ## Cursor Strategy
 
 - User-account connectors store `sync_cursor` on `channel_connections`.

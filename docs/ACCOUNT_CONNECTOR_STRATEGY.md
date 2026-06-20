@@ -58,3 +58,28 @@ Adapters expose:
 - optional `sendMessage()`
 
 Actual login and send implementation is still runtime-owned. The adapter only defines the shape that runtime code must satisfy.
+
+## Connection Status Contract
+
+The web app must not infer “connected” from scraped conversations or browser tabs. A channel is connected only when the connector runtime reports an active `channel_connection`.
+
+For the current file-backed prototype, runtime status can be reported through `.data/connector-status.json`:
+
+```json
+[
+  {
+    "id": "instagram:jaewoo-main",
+    "channel": "instagram",
+    "accountLabel": "Jaewoo Instagram",
+    "ownerLabel": "Jaewoo Park",
+    "accountKind": "user_account",
+    "authMode": "browser_session",
+    "status": "active",
+    "checkedAt": "2026-06-20T00:00:00.000Z",
+    "lastSyncedAt": "2026-06-20T00:00:00.000Z",
+    "detail": "Runtime confirmed the Instagram session."
+  }
+]
+```
+
+When Supabase persistence is enabled, this same state maps to `channel_connections`. Multiple users and multiple accounts are modeled as multiple rows, not as one channel-level flag.
