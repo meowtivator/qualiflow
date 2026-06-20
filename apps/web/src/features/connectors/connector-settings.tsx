@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { CheckCircle2, ExternalLink, Loader2, Plus } from "lucide-react";
+import { CheckCircle2, ExternalLink, Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 type ConnectorDefinition = {
@@ -143,6 +143,14 @@ function removePendingConnection(connectionId: string) {
   writePendingConnections(readPendingConnections().filter((item) => item.id !== connectionId));
 }
 
+function removePendingConnectionsByChannel(channel: string) {
+  writePendingConnections(readPendingConnections().filter((item) => item.channel !== channel));
+}
+
+function isPendingConnection(connection: RuntimeConnection | PendingConnection): connection is PendingConnection {
+  return connection.source === "local_pending";
+}
+
 function formatDate(value?: string) {
   if (!value) {
     return undefined;
@@ -175,6 +183,10 @@ function createConnectionId(channel: string) {
   return `${channel}:${Date.now()}`;
 }
 
+function createSafeDomId(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 function getStatusLabel(status: ConnectionStatus) {
   switch (status) {
     case "active":
@@ -201,10 +213,23 @@ function getConnectionDetail(connection: RuntimeConnection | PendingConnection) 
 
 function mergeConnections(runtimeConnections: RuntimeConnection[], pendingConnections: PendingConnection[]) {
   const runtimeIds = new Set(runtimeConnections.map((connection) => connection.id));
+  const activeChannelCounts = runtimeConnections.reduce<Record<string, number>>((counts, connection) => {
+    if (connection.status === "active") {
+      counts[connection.channel] = (counts[connection.channel] ?? 0) + 1;
+    }
+
+    return counts;
+  }, {});
 
   return [
     ...runtimeConnections,
-    ...pendingConnections.filter((connection) => !runtimeIds.has(connection.id))
+    ...pendingConnections.filter((connection) => {
+      if (runtimeIds.has(connection.id)) {
+        return false;
+      }
+
+      return activeChannelCounts[connection.channel] !== 1;
+    })
   ];
 }
 
@@ -244,6 +269,28 @@ export function ConnectorSettings() {
           showToast(`${connection.accountLabel} 연결이 확인되었습니다.`, "success");
         }
       }
+
+      const pending = readPendingConnections();
+      const activeByChannel = connections.reduce<Record<string, RuntimeConnection[]>>((grouped, connection) => {
+        if (connection.status === "active") {
+          grouped[connection.channel] = [...(grouped[connection.channel] ?? []), connection];
+        }
+
+        return grouped;
+      }, {});
+
+      for (const pendingConnection of pending) {
+        const exactMatch = connections.find(
+          (connection) => connection.id === pendingConnection.id && connection.status === "active"
+        );
+        const channelMatch = activeByChannel[pendingConnection.channel]?.length === 1
+          ? activeByChannel[pendingConnection.channel][0]
+          : undefined;
+
+        if (exactMatch || channelMatch) {
+          removePendingConnection(pendingConnection.id);
+        }
+      }
     } catch {
       showToast("연결 상태 목록을 불러오지 못했습니다.", "warning");
     }
@@ -259,7 +306,12 @@ export function ConnectorSettings() {
 
       if (status.status === "active") {
         removePendingConnection(connection.id);
-        await refreshRuntimeConnections({ notifyActiveIds: options.notifyOnActive ? [connection.id] : [] });
+        await refreshRuntimeConnections();
+
+        if (options.notifyOnActive) {
+          showToast(`${status.accountLabel} 연결이 확인되었습니다.`, "success");
+        }
+
         return;
       }
 
@@ -325,6 +377,28 @@ export function ConnectorSettings() {
     void checkPendingConnection(connection, { notifyOnActive: true });
   };
 
+  const handleRemoveConnection = (connection: RuntimeConnection | PendingConnection) => {
+    if (isPendingConnection(connection)) {
+      removePendingConnection(connection.id);
+      showToast(`${connection.accountLabel} 대기 항목을 삭제했습니다.`, "info");
+      return;
+    }
+
+    showToast("런타임이 보고한 연결은 앱 UI에서만 삭제할 수 없습니다. 세션/status 파일 또는 connector runtime에서 해제해야 합니다.", "warning");
+  };
+
+  const handleClearPendingConnections = (connector: ConnectorDefinition) => {
+    const count = readPendingConnections().filter((connection) => connection.channel === connector.id).length;
+
+    if (count === 0) {
+      showToast(`${connector.name} 대기 항목이 없습니다.`);
+      return;
+    }
+
+    removePendingConnectionsByChannel(connector.id);
+    showToast(`${connector.name} 대기 항목 ${count}개를 삭제했습니다.`, "info");
+  };
+
   useEffect(() => {
     if (!toast) {
       return;
@@ -374,6 +448,7 @@ export function ConnectorSettings() {
         {CONNECTORS.map((connector) => {
           const connections = visibleConnections.filter((connection) => connection.channel === connector.id);
           const activeCount = connections.filter((connection) => connection.status === "active").length;
+          const pendingCount = connections.filter(isPendingConnection).length;
 
           return (
             <article className="connector-card" data-connector-id={connector.id} key={connector.id}>
@@ -413,6 +488,15 @@ export function ConnectorSettings() {
                           </span>
                           <span>{getConnectionDetail(connection)}</span>
                         </div>
+                        <button
+                          aria-label={`${connection.accountLabel} 삭제`}
+                          className="connector-remove-button"
+                          data-testid={`connector-remove-${createSafeDomId(connection.id)}`}
+                          onClick={() => handleRemoveConnection(connection)}
+                          type="button"
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -431,6 +515,16 @@ export function ConnectorSettings() {
                   <Plus size={14} />
                   <ExternalLink size={14} />
                 </button>
+                {pendingCount > 0 ? (
+                  <button
+                    className="connector-connect-button secondary"
+                    data-testid={`connector-clear-pending-${connector.id}`}
+                    onClick={() => handleClearPendingConnections(connector)}
+                    type="button"
+                  >
+                    대기 정리
+                  </button>
+                ) : null}
               </div>
             </article>
           );

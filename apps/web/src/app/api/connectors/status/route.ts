@@ -189,13 +189,13 @@ export async function GET(request: NextRequest) {
   }
 
   const connections = await readRuntimeStatuses();
-  const matched = connections.find((connection) => {
-    if (connectionId) {
-      return connection.id === connectionId;
-    }
-
-    return connection.channel === channel;
-  });
+  const matchedById = connectionId ? connections.find((connection) => connection.id === connectionId) : undefined;
+  const sameChannelConnections = channel ? connections.filter((connection) => connection.channel === channel) : [];
+  const activeSameChannelConnections = sameChannelConnections.filter((connection) => connection.status === "active");
+  const matched =
+    matchedById ??
+    (connectionId && activeSameChannelConnections.length === 1 ? activeSameChannelConnections[0] : undefined) ??
+    (!connectionId ? sameChannelConnections[0] : undefined);
 
   if (matched) {
     return NextResponse.json(matched);

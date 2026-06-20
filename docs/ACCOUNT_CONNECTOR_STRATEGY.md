@@ -82,4 +82,6 @@ For the current file-backed prototype, runtime status can be reported through `.
 ]
 ```
 
+Alibaba has one extra local-prototype path: `packages/adapter-alibaba` creates a persistent Chrome profile through `inquiry:login`, then writes `.data/alibaba-connection.json` as the explicit connection status. The web app reads the status file, not the raw browser profile. Conversation JSON files are still not connection evidence.
+
 When Supabase persistence is enabled, this same state maps to `channel_connections`. Multiple users and multiple accounts are modeled as multiple rows, not as one channel-level flag.

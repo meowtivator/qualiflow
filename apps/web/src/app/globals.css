@@ -353,7 +353,7 @@ a {
 
 .connector-account-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--hairline);
@@ -434,6 +434,24 @@ a {
 .connector-status.disconnected {
   background: var(--surface-3);
   color: var(--ink-muted);
+}
+
+.connector-remove-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.connector-remove-button:hover {
+  border-color: rgba(195, 60, 60, 0.32);
+  background: #fdeaea;
+  color: var(--danger);
 }
 
 .connector-status-spinner {

@@ -13,12 +13,13 @@
 //   (다른 OS면 CHROME_PATH 환경변수로 크롬 실행파일 경로 지정)
 
 import { spawn } from "node:child_process";
-import { access, mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
 
 const PROFILE_DIR = resolve("../../.auth/alibaba-chrome-profile");
+const CONNECTION_STATUS_FILE = resolve("../../apps/web/.data/alibaba-connection.json");
 const LOGIN_URL = "https://login.alibaba.com/";
 const DEBUG_PORT = 9222;
 
@@ -70,7 +71,32 @@ const rl = createInterface({ input, output });
 await rl.question("로그인 완료 후 Enter... ");
 rl.close();
 
+const checkedAt = new Date().toISOString();
+await mkdir(dirname(CONNECTION_STATUS_FILE), { recursive: true });
+await writeFile(
+  CONNECTION_STATUS_FILE,
+  `${JSON.stringify(
+    {
+      accountKind: "user_account",
+      accountLabel: "Alibaba local session",
+      authMode: "browser_session",
+      capabilities: ["read_messages", "sync_history"],
+      channel: "alibaba",
+      checkedAt,
+      detail: "Alibaba login helper completed. Extractor will validate the session during sync.",
+      id: "alibaba:local-session",
+      lastSyncedAt: checkedAt,
+      ownerLabel: "Local runtime",
+      status: "active"
+    },
+    null,
+    2
+  )}\n`,
+  "utf8"
+);
+
 console.log(`\n세션이 영구 프로필에 저장됐습니다: ${PROFILE_DIR}`);
+console.log(`연결 상태도 웹앱 상태 파일에 기록했습니다: ${CONNECTION_STATUS_FILE}`);
 console.log("이제 추출: pnpm --filter @qualiflow/adapter-alibaba run inquiry:extract");
 
 // 크롬 종료(영구 프로필이라 로그인 쿠키는 디스크에 남는다). 안 닫히면 창을 직접 닫아도 됨.

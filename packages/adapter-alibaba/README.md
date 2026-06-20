@@ -56,7 +56,8 @@ https://onetalk.alibaba.com/message/weblitePWA.htm?spm=a2700.product_home_fy25.h
 
 Expected local files:
 
-- `../../.auth/alibaba.storage.json` - Playwright `storageState` from a manual Alibaba login.
+- `../../.auth/alibaba-chrome-profile` - persistent Chrome profile from a manual Alibaba login.
+- `../../apps/web/.data/alibaba-connection.json` - file-backed connector status written after `inquiry:login` completes.
 - `../../.captures/alibaba-inquiry/...` - ignored capture output with HAR, network events, WebSocket events, IndexedDB snapshots, and redacted response previews.
 
 The recorder does not automate login, bypass CAPTCHA, or send messages. It only records network traffic that the logged-in operator can already access in the browser.
