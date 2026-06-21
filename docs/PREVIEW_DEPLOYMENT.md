@@ -24,6 +24,23 @@ The UI shows the active data mode in the top bar:
 - `Real JSON preview`: at least one real channel file was loaded.
 - `Mock data`: no real channel file was loaded.
 
+## Connector login limitation
+
+The hosted preview can display extracted JSON and connection status files, but it
+cannot open or inspect a reviewer's local browser session.
+
+For user-session channels such as Instagram, a button in the hosted preview
+cannot directly connect the reviewer's personal account. That requires one of
+these production paths:
+
+- local/self-host QualiFlow running on the same machine as the browser,
+- a desktop connector agent,
+- a browser extension/native companion,
+- or an official OAuth/API connector where the platform supports it.
+
+The local web flow still exists: `POST /api/connectors/launch` can start a local
+runtime only when the web server is running on the same machine that has Chrome.
+
 ## Data files
 
 The preview data directory is gitignored and must be mounted or copied separately.

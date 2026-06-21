@@ -62,8 +62,9 @@ export async function POST(request: Request) {
   if (!LAUNCHABLE_CHANNELS.has(channel) || !runtime) {
     return NextResponse.json(
       {
+        code: "unsupported_connector_runtime",
         ok: false,
-        message: "This connector does not have a web-launchable local runtime yet."
+        message: "아직 웹에서 실행할 수 있는 로컬 런타임이 없는 커넥터입니다."
       },
       { status: 400 }
     );
@@ -74,9 +75,12 @@ export async function POST(request: Request) {
   if (!chromePath) {
     return NextResponse.json(
       {
+        code: "hosted_runtime_unavailable",
+        help:
+          "로컬에서 QualiFlow를 실행하면 웹 버튼으로 전용 Chrome을 열 수 있습니다. 배포형 SaaS에서는 데스크톱 connector agent, 브라우저 확장, 또는 공식 OAuth/API 연동이 필요합니다.",
         ok: false,
         message:
-          "Local Chrome was not found on this server. Hosted QualiFlow cannot open the user's browser; use a local runtime agent or official OAuth connector."
+          "현재 접속한 서버에서는 사용자 PC의 Chrome을 열 수 없습니다. 로컬 런타임 또는 공식 계정 연동 방식이 필요합니다."
       },
       { status: 501 }
     );
@@ -88,8 +92,9 @@ export async function POST(request: Request) {
   if (!(await fileExists(tsxPath)) || !(await fileExists(scriptPath))) {
     return NextResponse.json(
       {
+        code: "runtime_files_missing",
         ok: false,
-        message: "Connector runtime files are missing in this deployment."
+        message: "이 배포 환경에서 connector runtime 파일을 찾지 못했습니다."
       },
       { status: 500 }
     );
@@ -114,7 +119,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     channel,
-    message: "Local connector runtime launched. Complete login in the dedicated browser window.",
+    message: "전용 브라우저 창을 열었습니다. 열린 창에서 로그인을 완료하면 자동으로 연결됩니다.",
     ok: true
   });
 }

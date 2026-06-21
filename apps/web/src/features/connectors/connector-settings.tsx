@@ -45,7 +45,8 @@ const CONNECTORS: ConnectorDefinition[] = [
     name: "Instagram",
     logoUrl: "https://cdn.simpleicons.org/instagram/E4405F",
     connectUrl: "https://www.instagram.com/direct/inbox/",
-    connectHint: "계정 추가를 누르면 전용 브라우저 창이 열리고, Direct inbox가 보이면 자동으로 연결됩니다.",
+    connectHint:
+      "로컬/self-host에서는 계정 추가로 전용 브라우저 창을 열 수 있습니다. hosted preview는 별도 connector agent가 필요합니다.",
     webLaunchable: true
   }
 ];
@@ -82,6 +83,8 @@ type ConnectorListResponse = {
 };
 
 type ConnectorLaunchResponse = {
+  code?: string;
+  help?: string;
   message?: string;
   ok: boolean;
 };
@@ -414,7 +417,10 @@ export function ConnectorSettings() {
       const payload = (await response.json()) as ConnectorLaunchResponse;
 
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.message ?? "로컬 connector runtime을 실행하지 못했습니다.");
+        throw new Error(
+          [payload.message, payload.help].filter((messagePart): messagePart is string => Boolean(messagePart)).join(" ") ||
+            "로컬 connector runtime을 실행하지 못했습니다."
+        );
       }
 
       upsertPendingConnection({
