@@ -10,6 +10,8 @@ type ConnectorDefinition = {
   name: string;
   logoUrl: string;
   connectUrl: string;
+  connectHint: string;
+  runtimeCommand?: string;
 };
 
 const CONNECTORS: ConnectorDefinition[] = [
@@ -18,28 +20,34 @@ const CONNECTORS: ConnectorDefinition[] = [
     id: "alibaba",
     name: "Alibaba",
     logoUrl: "https://cdn.simpleicons.org/alibabadotcom/FF6A00",
-    connectUrl: "https://onetalk.alibaba.com/"
+    connectUrl: "https://onetalk.alibaba.com/",
+    connectHint: "전용 Chrome 프로필에서 로그인한 뒤 inquiry extractor가 연결 상태를 기록합니다.",
+    runtimeCommand: "pnpm --filter @qualiflow/adapter-alibaba run inquiry:login"
   },
   {
     authMode: "qr_pairing",
     id: "whatsapp",
     name: "WhatsApp",
     logoUrl: "https://cdn.simpleicons.org/whatsapp/25D366",
-    connectUrl: "https://web.whatsapp.com/"
+    connectUrl: "https://web.whatsapp.com/",
+    connectHint: "WhatsApp Web 세션을 런타임이 확인하고 상태 파일을 기록해야 연결됩니다."
   },
   {
     authMode: "phone_code",
     id: "telegram",
     name: "Telegram",
     logoUrl: "https://cdn.simpleicons.org/telegram/26A5E4",
-    connectUrl: "https://web.telegram.org/"
+    connectUrl: "https://web.telegram.org/",
+    connectHint: "MTProto/TDLib 런타임이 사용자 계정을 인증하고 상태를 보고해야 연결됩니다."
   },
   {
     authMode: "browser_session",
     id: "instagram",
     name: "Instagram",
     logoUrl: "https://cdn.simpleicons.org/instagram/E4405F",
-    connectUrl: "https://www.instagram.com/direct/inbox/"
+    connectUrl: "https://www.instagram.com/direct/inbox/",
+    connectHint: "일반 Instagram 탭은 앱이 읽을 수 없으므로 전용 런타임 프로필로 로그인 상태를 기록합니다.",
+    runtimeCommand: "pnpm --filter @qualiflow/adapter-instagram run inbox:login"
   }
 ];
 
@@ -79,6 +87,8 @@ type ToastState = {
   message: string;
   tone: "success" | "info" | "warning";
 };
+
+type RemovalDataPolicy = "keep" | "delete";
 
 const PENDING_CONNECTIONS_KEY = "qualiflow.pendingConnectorConnections.v1";
 const PENDING_CONNECTION_EVENT = "qualiflow:pending-connector-connections";
@@ -237,6 +247,9 @@ export function ConnectorSettings() {
   const pendingSnapshot = useSyncExternalStore(subscribePendingConnections, getPendingConnectionsSnapshot, () => "[]");
   const pendingConnections = useMemo(() => parsePendingConnections(pendingSnapshot), [pendingSnapshot]);
   const [runtimeConnections, setRuntimeConnections] = useState<RuntimeConnection[]>([]);
+  const [removalTarget, setRemovalTarget] = useState<RuntimeConnection | null>(null);
+  const [removalDataPolicy, setRemovalDataPolicy] = useState<RemovalDataPolicy>("keep");
+  const [isRemoving, setIsRemoving] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastIdRef = useRef(0);
 
@@ -357,13 +370,16 @@ export function ConnectorSettings() {
 
   const handleAddConnection = (connector: ConnectorDefinition) => {
     const now = new Date().toISOString();
+    const runtimeDetail = connector.runtimeCommand
+      ? `자동 감지는 connector runtime이 상태 파일을 기록해야 합니다. 실행: ${connector.runtimeCommand}`
+      : "로그인 창은 열렸고, connector runtime의 연결 완료 보고를 기다리고 있습니다.";
     const connection: PendingConnection = {
       accountKind: "user_account",
       accountLabel: `새 ${connector.name} 계정`,
       authMode: connector.authMode,
       channel: connector.id,
       checkedAt: now,
-      detail: "로그인 창을 열었습니다. connector runtime의 연결 완료 보고를 기다립니다.",
+      detail: runtimeDetail,
       id: createConnectionId(connector.id),
       openedAt: now,
       ownerLabel: "현재 사용자",
@@ -373,7 +389,11 @@ export function ConnectorSettings() {
 
     upsertPendingConnection(connection);
     window.open(connector.connectUrl, "_blank", "noopener,noreferrer");
-    showToast(`${connector.name} 로그인 창을 열었습니다. 연결 상태는 자동으로 확인합니다.`);
+    showToast(
+      connector.runtimeCommand
+        ? `${connector.name} 창을 열었습니다. 자동 감지는 런타임 명령 실행 후 확인됩니다.`
+        : `${connector.name} 로그인 창을 열었습니다. 연결 상태는 자동으로 확인합니다.`
+    );
     void checkPendingConnection(connection, { notifyOnActive: true });
   };
 
@@ -384,7 +404,61 @@ export function ConnectorSettings() {
       return;
     }
 
-    showToast("런타임이 보고한 연결은 앱 UI에서만 삭제할 수 없습니다. 세션/status 파일 또는 connector runtime에서 해제해야 합니다.", "warning");
+    setRemovalTarget(connection);
+    setRemovalDataPolicy("keep");
+  };
+
+  const handleCloseRemovalDialog = () => {
+    if (isRemoving) {
+      return;
+    }
+
+    setRemovalTarget(null);
+    setRemovalDataPolicy("keep");
+  };
+
+  const handleConfirmRuntimeRemoval = async () => {
+    if (!removalTarget) {
+      return;
+    }
+
+    setIsRemoving(true);
+
+    try {
+      const response = await fetch("/api/connectors/status", {
+        body: JSON.stringify({
+          channel: removalTarget.channel,
+          connectionId: removalTarget.id,
+          deleteData: removalDataPolicy === "delete"
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "DELETE"
+      });
+      const payload = (await response.json()) as { message?: string; errors?: string[] };
+
+      if (!response.ok) {
+        throw new Error(payload.errors?.[0] ?? payload.message ?? "연결 해제에 실패했습니다.");
+      }
+
+      setRuntimeConnections((connections) => connections.filter((connection) => connection.id !== removalTarget.id));
+      setRemovalTarget(null);
+      setRemovalDataPolicy("keep");
+
+      showToast(
+        removalDataPolicy === "delete"
+          ? `${removalTarget.accountLabel} 연결과 동기화 데이터를 삭제했습니다.`
+          : `${removalTarget.accountLabel} 연결을 해제했습니다.`,
+        "success"
+      );
+
+      await refreshRuntimeConnections();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "연결 해제에 실패했습니다.", "warning");
+    } finally {
+      setIsRemoving(false);
+    }
   };
 
   const handleClearPendingConnections = (connector: ConnectorDefinition) => {
@@ -444,6 +518,52 @@ export function ConnectorSettings() {
         </div>
       ) : null}
 
+      {removalTarget ? (
+        <div className="connector-removal-dialog" role="dialog" aria-modal="true" aria-labelledby="connector-removal-title">
+          <div className="connector-removal-panel">
+            <div>
+              <h2 id="connector-removal-title">연결 해제</h2>
+              <p>
+                {removalTarget.accountLabel} 연결을 해제합니다. 이 계정에서 동기화한 대화 데이터도 함께 삭제할지
+                선택하세요.
+              </p>
+            </div>
+            <div className="connector-removal-options" role="radiogroup" aria-label="삭제 범위">
+              <button
+                className={removalDataPolicy === "keep" ? "active" : ""}
+                onClick={() => setRemovalDataPolicy("keep")}
+                type="button"
+              >
+                연결만 해제
+                <span>대화/메시지 preview 데이터는 보존합니다.</span>
+              </button>
+              <button
+                className={removalDataPolicy === "delete" ? "active danger" : "danger"}
+                onClick={() => setRemovalDataPolicy("delete")}
+                type="button"
+              >
+                연결 + 데이터 삭제
+                <span>현재 JSON preview 저장소의 해당 채널 데이터를 같이 삭제합니다.</span>
+              </button>
+            </div>
+            <div className="connector-removal-actions">
+              <button className="connector-connect-button secondary" onClick={handleCloseRemovalDialog} type="button">
+                취소
+              </button>
+              <button
+                className="connector-connect-button danger"
+                disabled={isRemoving}
+                onClick={() => void handleConfirmRuntimeRemoval()}
+                type="button"
+              >
+                {isRemoving ? <Loader2 className="connector-status-spinner" size={14} /> : <Trash2 size={14} />}
+                해제
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="connector-grid">
         {CONNECTORS.map((connector) => {
           const connections = visibleConnections.filter((connection) => connection.channel === connector.id);
@@ -470,6 +590,10 @@ export function ConnectorSettings() {
                   </span>
                 </div>
                 <p>사용자별로 여러 계정을 연결하고, 계정별 상태를 따로 확인합니다.</p>
+                <div className="connector-runtime-hint">
+                  <span>{connector.connectHint}</span>
+                  {connector.runtimeCommand ? <code>{connector.runtimeCommand}</code> : null}
+                </div>
                 {connections.length > 0 ? (
                   <div className="connector-account-list">
                     {connections.map((connection) => (

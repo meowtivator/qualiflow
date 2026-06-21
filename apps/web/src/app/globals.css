@@ -334,6 +334,32 @@ a {
   white-space: nowrap;
 }
 
+.connector-runtime-hint {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 8px;
+}
+
+.connector-runtime-hint span,
+.connector-runtime-hint code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connector-runtime-hint code {
+  color: var(--primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+
 .connector-service-summary {
   display: inline-flex;
   flex: 0 0 auto;
@@ -504,6 +530,94 @@ a {
   border-color: var(--primary);
   background: var(--primary-fill);
   color: var(--primary);
+}
+
+.connector-connect-button.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+.connector-connect-button.danger:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.connector-removal-dialog {
+  position: fixed;
+  z-index: 8;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 22, 28, 0.2);
+  padding: 20px;
+}
+
+.connector-removal-panel {
+  display: grid;
+  width: min(100%, 480px);
+  gap: 16px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 16px;
+  background: var(--surface-1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+  padding: 18px;
+}
+
+.connector-removal-panel h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.connector-removal-panel p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.connector-removal-options {
+  display: grid;
+  gap: 8px;
+}
+
+.connector-removal-options button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 11px 12px;
+  text-align: left;
+}
+
+.connector-removal-options button.active {
+  border-color: var(--primary);
+  background: var(--primary-fill);
+  color: var(--primary);
+}
+
+.connector-removal-options button.danger.active {
+  border-color: rgba(195, 60, 60, 0.42);
+  background: #fdeaea;
+  color: var(--danger);
+}
+
+.connector-removal-options span {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connector-removal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .connector-toast {

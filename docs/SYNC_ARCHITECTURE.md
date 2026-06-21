@@ -48,6 +48,15 @@ The durable store should upsert in this order:
 - Webhook-capable channels can keep provider event ids for dedupe.
 - Alibaba stores the last seen `conversationCode` + message id/time as a cursor, but session validity is controlled by the local browser profile.
 
+## Disconnect Strategy
+
+Disconnecting a channel account is a two-step decision.
+
+- Session/status removal: the runtime invalidates or removes the session reference and marks the connection as disconnected.
+- Data removal: the operator explicitly chooses whether synced threads/messages from that account should also be deleted.
+
+For the local JSON preview, this means removing `<channel>-connection.json` first and optionally removing `<channel>-conversations.json` or equivalent raw preview files. For Supabase, it should become a transaction around `channel_connections`, `channel_identities`, `threads`, and `messages`.
+
 ## Verification Order
 
 1. Normalize fixture payloads into `ConversationAdapter`.

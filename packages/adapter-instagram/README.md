@@ -11,6 +11,32 @@ responsible for authenticating either:
 The runtime exports account conversations, and this adapter normalizes them into
 QualiFlow leads, threads, and messages.
 
+## Local user-session login spike
+
+For the local prototype, the connector runtime can keep a dedicated Chrome
+profile for Instagram. This is intentionally separate from the normal browser
+session because the web app cannot inspect a cross-origin Instagram tab.
+
+```bash
+pnpm --filter @qualiflow/adapter-instagram run inbox:login
+```
+
+The command opens Chrome with `../../.auth/instagram-chrome-profile`.
+
+- If Instagram Direct is already visible, press Enter and the runtime writes the
+  connector status file.
+- If not, log in manually, open Instagram Direct, then press Enter.
+
+The status file is written to:
+
+```text
+../../apps/web/.data/instagram-connection.json
+```
+
+The web app reads that file through `/api/connectors/status`. Conversation
+extraction is still a separate runtime step; this command only confirms that the
+runtime profile is connected.
+
 ```ts
 import { createInstagramAdapterFromConversations } from "@qualiflow/adapter-instagram";
 

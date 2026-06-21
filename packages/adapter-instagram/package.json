@@ -15,6 +15,7 @@
   "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "inbox:login": "tsx ./src/cli/login-session.ts",
     "normalize:check": "tsx ./src/normalize.check.ts",
     "typecheck": "tsc --noEmit"
   },

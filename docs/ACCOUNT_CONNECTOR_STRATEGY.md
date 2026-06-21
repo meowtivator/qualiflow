@@ -84,4 +84,21 @@ For the current file-backed prototype, runtime status can be reported through `.
 
 Alibaba has one extra local-prototype path: `packages/adapter-alibaba` creates a persistent Chrome profile through `inquiry:login`, then writes `.data/alibaba-connection.json` as the explicit connection status. The web app reads the status file, not the raw browser profile. Conversation JSON files are still not connection evidence.
 
+Instagram follows the same local-prototype direction through `packages/adapter-instagram`:
+
+```bash
+pnpm --filter @qualiflow/adapter-instagram run inbox:login
+```
+
+This command opens a dedicated Chrome profile at `../../.auth/instagram-chrome-profile` and writes `.data/instagram-connection.json` after the operator confirms Instagram Direct is visible. A normal browser tab that is already logged in is not enough, because the QualiFlow web app cannot inspect cross-origin Instagram cookies, DOM, or localStorage. The runtime profile is the inspected boundary.
+
 When Supabase persistence is enabled, this same state maps to `channel_connections`. Multiple users and multiple accounts are modeled as multiple rows, not as one channel-level flag.
+
+## Disconnect and Data Deletion
+
+Deleting a connected account must ask for scope:
+
+1. Disconnect only - remove the connection status/session reference but keep synced lead/thread/message data.
+2. Disconnect and delete synced data - remove the connection and the channel data imported through that account.
+
+The file-backed prototype maps this to `*-connection.json` and optionally `*-conversations.json` deletion. The future Supabase-backed implementation should apply the same choice to `channel_connections` and related `threads/messages`, without silently deleting buyer records.

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -24,6 +24,12 @@ type ConnectorConnectionStatus = {
 
 const SUPPORTED_CHANNELS = new Set(["alibaba", "instagram", "telegram", "whatsapp"]);
 const CONNECTOR_STATUSES = new Set<ConnectorStatus>(["disconnected", "active", "needs_relogin", "error"]);
+const SYNC_DATA_FILES_BY_CHANNEL: Record<string, string[]> = {
+  alibaba: ["alibaba-conversations.json"],
+  instagram: ["instagram-conversations.json"],
+  telegram: ["telegram-conversations.json", "telegram-dialogs.json"],
+  whatsapp: ["whatsapp-conversations.json"]
+};
 
 const DATA_DIR_CANDIDATES = [
   path.join(/*turbopackIgnore: true*/ process.cwd(), ".data"),
@@ -44,6 +50,12 @@ type RuntimeStatusRecord = {
   ownerLabel?: unknown;
   ownerUserId?: unknown;
   status?: unknown;
+};
+
+type DisconnectRequestPayload = {
+  channel?: unknown;
+  connectionId?: unknown;
+  deleteData?: unknown;
 };
 
 function isStringArray(value: unknown): value is string[] {
@@ -99,6 +111,53 @@ async function readJsonFile(filePath: string): Promise<unknown | undefined> {
   } catch {
     return undefined;
   }
+}
+
+function shouldRemoveConnection(connection: ConnectorConnectionStatus | undefined, channel: string, connectionId?: string) {
+  if (!connection) {
+    return false;
+  }
+
+  if (connectionId) {
+    return connection.id === connectionId;
+  }
+
+  return connection.channel === channel;
+}
+
+function removeFromConnectorStatusPayload(value: unknown, channel: string, connectionId?: string) {
+  if (Array.isArray(value)) {
+    const nextValue = value.filter((item) => !shouldRemoveConnection(normalizeRuntimeStatus(item), channel, connectionId));
+    return {
+      changed: nextValue.length !== value.length,
+      value: nextValue
+    };
+  }
+
+  if (!value || typeof value !== "object") {
+    return {
+      changed: false,
+      value
+    };
+  }
+
+  let changed = false;
+  const nextEntries = Object.entries(value).filter(([key, item]) => {
+    const fallback = SUPPORTED_CHANNELS.has(key) ? { channel: key, id: `${key}:default` } : { id: key };
+    const normalized = normalizeRuntimeStatus(item, fallback);
+    const shouldRemove = shouldRemoveConnection(normalized, channel, connectionId);
+
+    if (shouldRemove) {
+      changed = true;
+    }
+
+    return !shouldRemove;
+  });
+
+  return {
+    changed,
+    value: Object.fromEntries(nextEntries)
+  };
 }
 
 function normalizeConnectorStatusPayload(value: unknown): ConnectorConnectionStatus[] {
@@ -202,4 +261,89 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json(createMissingStatus(channel ?? "unknown", connectionId));
+}
+
+export async function DELETE(request: NextRequest) {
+  let payload: DisconnectRequestPayload;
+
+  try {
+    payload = (await request.json()) as DisconnectRequestPayload;
+  } catch {
+    return NextResponse.json({ ok: false, message: "Invalid JSON payload." }, { status: 400 });
+  }
+
+  const channel = typeof payload.channel === "string" ? payload.channel.trim().toLowerCase() : "";
+  const connectionId = typeof payload.connectionId === "string" ? payload.connectionId.trim() : undefined;
+  const deleteData = payload.deleteData === true;
+
+  if (!SUPPORTED_CHANNELS.has(channel)) {
+    return NextResponse.json({ ok: false, message: "Unsupported channel." }, { status: 400 });
+  }
+
+  const removedStatusFiles: string[] = [];
+  const removedDataFiles: string[] = [];
+  const errors: string[] = [];
+
+  for (const dataDir of DATA_DIR_CANDIDATES) {
+    const perChannelStatusPath = path.join(dataDir, `${channel}-connection.json`);
+    const perChannelStatus = normalizeRuntimeStatus(await readJsonFile(perChannelStatusPath), {
+      channel,
+      id: `${channel}:default`
+    });
+
+    if (shouldRemoveConnection(perChannelStatus, channel, connectionId)) {
+      try {
+        await rm(perChannelStatusPath, { force: true });
+        removedStatusFiles.push(perChannelStatusPath);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : `Failed to remove ${perChannelStatusPath}`);
+      }
+    }
+
+    const connectorStatusPath = path.join(dataDir, "connector-status.json");
+    const connectorStatus = await readJsonFile(connectorStatusPath);
+    const nextConnectorStatus = removeFromConnectorStatusPayload(connectorStatus, channel, connectionId);
+
+    if (nextConnectorStatus.changed) {
+      try {
+        await writeFile(connectorStatusPath, `${JSON.stringify(nextConnectorStatus.value, null, 2)}\n`, "utf8");
+        removedStatusFiles.push(connectorStatusPath);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : `Failed to update ${connectorStatusPath}`);
+      }
+    }
+
+    if (deleteData) {
+      for (const fileName of SYNC_DATA_FILES_BY_CHANNEL[channel] ?? []) {
+        const dataFilePath = path.join(dataDir, fileName);
+
+        try {
+          await rm(dataFilePath, { force: true });
+          removedDataFiles.push(dataFilePath);
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : `Failed to remove ${dataFilePath}`);
+        }
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        errors,
+        removedDataFiles,
+        removedStatusFiles
+      },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({
+    checkedAt: new Date().toISOString(),
+    deleteData,
+    ok: true,
+    removedDataFiles,
+    removedStatusFiles
+  });
 }
