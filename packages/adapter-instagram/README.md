@@ -17,15 +17,27 @@ For the local prototype, the connector runtime can keep a dedicated Chrome
 profile for Instagram. This is intentionally separate from the normal browser
 session because the web app cannot inspect a cross-origin Instagram tab.
 
+In the web UI, the Instagram connector calls:
+
+```text
+POST /api/connectors/launch
+```
+
+That API starts this runtime in web mode and opens the dedicated Chrome profile.
+When Instagram Direct becomes visible, the runtime writes the connector status
+file automatically.
+
+The CLI remains available for development/debugging:
+
 ```bash
-pnpm --filter @qualiflow/adapter-instagram run inbox:login
+pnpm --filter @qualiflow/adapter-instagram run inbox:login -- --web
 ```
 
 The command opens Chrome with `../../.auth/instagram-chrome-profile`.
 
-- If Instagram Direct is already visible, press Enter and the runtime writes the
-  connector status file.
-- If not, log in manually, open Instagram Direct, then press Enter.
+- In web mode, the runtime polls the dedicated Chrome profile until Instagram
+  Direct is visible.
+- Without `--web`, the command stays interactive and waits for Enter.
 
 The status file is written to:
 

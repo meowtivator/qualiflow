@@ -520,6 +520,11 @@ a {
   border-color: #4e59bf;
 }
 
+.connector-connect-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
 .connector-connect-button.secondary {
   border-color: var(--hairline-strong);
   background: var(--surface-1);

@@ -87,10 +87,16 @@ Alibaba has one extra local-prototype path: `packages/adapter-alibaba` creates a
 Instagram follows the same local-prototype direction through `packages/adapter-instagram`:
 
 ```bash
-pnpm --filter @qualiflow/adapter-instagram run inbox:login
+pnpm --filter @qualiflow/adapter-instagram run inbox:login -- --web
 ```
 
 This command opens a dedicated Chrome profile at `../../.auth/instagram-chrome-profile` and writes `.data/instagram-connection.json` after the operator confirms Instagram Direct is visible. A normal browser tab that is already logged in is not enough, because the QualiFlow web app cannot inspect cross-origin Instagram cookies, DOM, or localStorage. The runtime profile is the inspected boundary.
+
+In the product UI, operators should not be asked to run this command manually. The connector card calls `POST /api/connectors/launch`, and the server-side local runtime starts the dedicated Chrome profile. This only works when the web server is running on the same machine that can open the operator's browser. A hosted QualiFlow server cannot open or inspect a user's local Instagram session; hosted production needs one of these paths:
+
+- official OAuth/API where the platform allows it,
+- a signed desktop connector agent that runs beside the user's browser,
+- a browser extension/native companion that reports connection status back to QualiFlow.
 
 When Supabase persistence is enabled, this same state maps to `channel_connections`. Multiple users and multiple accounts are modeled as multiple rows, not as one channel-level flag.
 

@@ -11,7 +11,7 @@ type ConnectorDefinition = {
   logoUrl: string;
   connectUrl: string;
   connectHint: string;
-  runtimeCommand?: string;
+  webLaunchable?: boolean;
 };
 
 const CONNECTORS: ConnectorDefinition[] = [
@@ -21,8 +21,7 @@ const CONNECTORS: ConnectorDefinition[] = [
     name: "Alibaba",
     logoUrl: "https://cdn.simpleicons.org/alibabadotcom/FF6A00",
     connectUrl: "https://onetalk.alibaba.com/",
-    connectHint: "전용 Chrome 프로필에서 로그인한 뒤 inquiry extractor가 연결 상태를 기록합니다.",
-    runtimeCommand: "pnpm --filter @qualiflow/adapter-alibaba run inquiry:login"
+    connectHint: "전용 Chrome 프로필에서 로그인한 뒤 inquiry extractor가 연결 상태를 기록합니다."
   },
   {
     authMode: "qr_pairing",
@@ -46,8 +45,8 @@ const CONNECTORS: ConnectorDefinition[] = [
     name: "Instagram",
     logoUrl: "https://cdn.simpleicons.org/instagram/E4405F",
     connectUrl: "https://www.instagram.com/direct/inbox/",
-    connectHint: "일반 Instagram 탭은 앱이 읽을 수 없으므로 전용 런타임 프로필로 로그인 상태를 기록합니다.",
-    runtimeCommand: "pnpm --filter @qualiflow/adapter-instagram run inbox:login"
+    connectHint: "계정 추가를 누르면 전용 브라우저 창이 열리고, Direct inbox가 보이면 자동으로 연결됩니다.",
+    webLaunchable: true
   }
 ];
 
@@ -82,6 +81,11 @@ type ConnectorListResponse = {
   connections: RuntimeConnection[];
 };
 
+type ConnectorLaunchResponse = {
+  message?: string;
+  ok: boolean;
+};
+
 type ToastState = {
   id: number;
   message: string;
@@ -93,7 +97,7 @@ type RemovalDataPolicy = "keep" | "delete";
 const PENDING_CONNECTIONS_KEY = "qualiflow.pendingConnectorConnections.v1";
 const PENDING_CONNECTION_EVENT = "qualiflow:pending-connector-connections";
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 60_000;
+const POLL_TIMEOUT_MS = 5 * 60_000;
 
 function parsePendingConnections(rawValue: string | null): PendingConnection[] {
   if (!rawValue) {
@@ -247,6 +251,7 @@ export function ConnectorSettings() {
   const pendingSnapshot = useSyncExternalStore(subscribePendingConnections, getPendingConnectionsSnapshot, () => "[]");
   const pendingConnections = useMemo(() => parsePendingConnections(pendingSnapshot), [pendingSnapshot]);
   const [runtimeConnections, setRuntimeConnections] = useState<RuntimeConnection[]>([]);
+  const [launchingChannel, setLaunchingChannel] = useState<string | null>(null);
   const [removalTarget, setRemovalTarget] = useState<RuntimeConnection | null>(null);
   const [removalDataPolicy, setRemovalDataPolicy] = useState<RemovalDataPolicy>("keep");
   const [isRemoving, setIsRemoving] = useState(false);
@@ -368,10 +373,10 @@ export function ConnectorSettings() {
     }
   };
 
-  const handleAddConnection = (connector: ConnectorDefinition) => {
+  const handleAddConnection = async (connector: ConnectorDefinition) => {
     const now = new Date().toISOString();
-    const runtimeDetail = connector.runtimeCommand
-      ? `자동 감지는 connector runtime이 상태 파일을 기록해야 합니다. 실행: ${connector.runtimeCommand}`
+    const runtimeDetail = connector.webLaunchable
+      ? "전용 브라우저 창을 여는 중입니다. 로그인 후 Direct inbox가 보이면 자동으로 연결됩니다."
       : "로그인 창은 열렸고, connector runtime의 연결 완료 보고를 기다리고 있습니다.";
     const connection: PendingConnection = {
       accountKind: "user_account",
@@ -388,13 +393,47 @@ export function ConnectorSettings() {
     };
 
     upsertPendingConnection(connection);
-    window.open(connector.connectUrl, "_blank", "noopener,noreferrer");
-    showToast(
-      connector.runtimeCommand
-        ? `${connector.name} 창을 열었습니다. 자동 감지는 런타임 명령 실행 후 확인됩니다.`
-        : `${connector.name} 로그인 창을 열었습니다. 연결 상태는 자동으로 확인합니다.`
-    );
-    void checkPendingConnection(connection, { notifyOnActive: true });
+
+    if (!connector.webLaunchable) {
+      window.open(connector.connectUrl, "_blank", "noopener,noreferrer");
+      showToast(`${connector.name} 로그인 창을 열었습니다. 연결 상태는 자동으로 확인합니다.`);
+      void checkPendingConnection(connection, { notifyOnActive: true });
+      return;
+    }
+
+    setLaunchingChannel(connector.id);
+
+    try {
+      const response = await fetch("/api/connectors/launch", {
+        body: JSON.stringify({ channel: connector.id }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      const payload = (await response.json()) as ConnectorLaunchResponse;
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.message ?? "로컬 connector runtime을 실행하지 못했습니다.");
+      }
+
+      upsertPendingConnection({
+        ...connection,
+        detail: "전용 브라우저 창을 열었습니다. 로그인 완료를 자동으로 확인하고 있습니다."
+      });
+      showToast(`${connector.name} 전용 브라우저 창을 열었습니다. 로그인 완료를 자동으로 확인합니다.`);
+      void checkPendingConnection(connection, { notifyOnActive: true });
+    } catch (error) {
+      upsertPendingConnection({
+        ...connection,
+        checkedAt: new Date().toISOString(),
+        detail: error instanceof Error ? error.message : "로컬 connector runtime을 실행하지 못했습니다.",
+        status: "error"
+      });
+      showToast(error instanceof Error ? error.message : "로컬 connector runtime을 실행하지 못했습니다.", "warning");
+    } finally {
+      setLaunchingChannel(null);
+    }
   };
 
   const handleRemoveConnection = (connection: RuntimeConnection | PendingConnection) => {
@@ -592,7 +631,6 @@ export function ConnectorSettings() {
                 <p>사용자별로 여러 계정을 연결하고, 계정별 상태를 따로 확인합니다.</p>
                 <div className="connector-runtime-hint">
                   <span>{connector.connectHint}</span>
-                  {connector.runtimeCommand ? <code>{connector.runtimeCommand}</code> : null}
                 </div>
                 {connections.length > 0 ? (
                   <div className="connector-account-list">
@@ -632,11 +670,16 @@ export function ConnectorSettings() {
                 <button
                   className="connector-connect-button"
                   data-testid={`connector-add-${connector.id}`}
-                  onClick={() => handleAddConnection(connector)}
+                  disabled={launchingChannel === connector.id}
+                  onClick={() => void handleAddConnection(connector)}
                   type="button"
                 >
-                  계정 추가
-                  <Plus size={14} />
+                  {launchingChannel === connector.id ? "실행 중" : "계정 추가"}
+                  {launchingChannel === connector.id ? (
+                    <Loader2 className="connector-status-spinner" size={14} />
+                  ) : (
+                    <Plus size={14} />
+                  )}
                   <ExternalLink size={14} />
                 </button>
                 {pendingCount > 0 ? (
