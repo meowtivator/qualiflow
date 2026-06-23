@@ -132,15 +132,22 @@ export async function fetchWhatsApp(
     let finished = false;
     let reconnects = 0;
     let quietTimer: ReturnType<typeof setTimeout> | undefined;
+    let hardTimer: ReturnType<typeof setTimeout> | undefined;
+    let currentSock: ReturnType<typeof makeWASocket> | undefined;
 
     async function finish(): Promise<void> {
       if (finished) {
         return;
       }
       finished = true;
+      // 남은 타이머/소켓을 정리해야 Node 프로세스가 빠져나간다(안 그러면 터미널을 계속 점유).
       if (quietTimer) {
         clearTimeout(quietTimer);
       }
+      if (hardTimer) {
+        clearTimeout(hardTimer);
+      }
+      currentSock?.end(undefined); // WebSocket/keepalive 종료 (finished=true라 close 이벤트가 재연결 안 함)
 
       const conversations: ChatRawConversation[] = [];
       for (const [jid, list] of messagesByJid) {
@@ -193,6 +200,7 @@ export async function fetchWhatsApp(
         syncFullHistory: true,
         ...(WA_DEBUG ? {} : { logger: silentLogger })
       });
+      currentSock = sock; // finish()에서 닫을 수 있게 최신 소켓을 기억
       sock.ev.on("creds.update", saveCreds);
 
       sock.ev.on("connection.update", (update) => {
@@ -259,6 +267,6 @@ export async function fetchWhatsApp(
     }
 
     connect();
-    setTimeout(() => void finish(), HARD_TIMEOUT_MS); // 안전 상한
+    hardTimer = setTimeout(() => void finish(), HARD_TIMEOUT_MS); // 안전 상한
   });
 }
