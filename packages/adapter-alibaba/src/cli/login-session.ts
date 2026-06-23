@@ -21,6 +21,8 @@ import { spawn } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
+import { chromium } from "playwright-core";
+
 // 계정별 프로필 경로(에이전트가 QUALIFLOW_ALIBABA_PROFILE로 계정별로 지정). 없으면 기본(하위호환).
 const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
 const CONNECTION_STATUS_FILE = resolve("../../apps/web/.data/alibaba-connection.json");
@@ -48,45 +50,61 @@ async function findChrome(): Promise<string | null> {
   return null;
 }
 
-type ChromeTarget = { title?: string; type?: string; url?: string };
-
-// 크롬 디버그 포트에서 현재 열린 탭(target) 목록을 읽는다.
-async function readChromeTargets(): Promise<ChromeTarget[]> {
-  try {
-    const response = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`);
-    if (!response.ok) {
-      return [];
-    }
-    const payload = (await response.json()) as unknown;
-    return Array.isArray(payload) ? (payload as ChromeTarget[]) : [];
-  } catch {
-    return []; // 포트가 아직 안 열렸거나 크롬이 닫힘
-  }
-}
-
-// "로그인 성공 후 onetalk 화면"인지 판별: 페이지 url이 onetalk이고, 로그인/패스포트 페이지가 아님.
-function isOnetalkReady(target: ChromeTarget): boolean {
-  const url = target.url ?? "";
-  return (
-    target.type === "page" &&
-    url.includes("onetalk.alibaba.com") &&
-    !/login|signin|passport/i.test(url)
-  );
-}
-
 function delay(ms: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
 
-async function waitForOnetalk(timeoutMs: number): Promise<boolean> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    if ((await readChromeTargets()).some(isOnetalkReady)) {
-      return true;
+// 크롬 디버그 포트(CDP)가 열릴 때까지 대기.
+async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (response.ok) {
+        return true;
+      }
+    } catch {
+      // 아직 준비 안 됨
     }
-    await delay(1500);
+    await delay(400);
   }
   return false;
+}
+
+// ★로그인 감지: URL만 보면 onetalk을 '여는 순간'의 주소를 로그인됨으로 오인한다(리다이렉트 전 레이스).
+//   그래서 실제로 인박스(대화 목록 .contact-item-container)가 떴는지 CDP로 확인한다.
+//   빈 계정 대비: onetalk(로그인 페이지 아님) 상태가 ~12초 안정 유지되면 로그인으로 인정.
+async function waitForLogin(timeoutMs: number): Promise<boolean> {
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
+  try {
+    const context = browser.contexts()[0];
+    const startedAt = Date.now();
+    let stableOnetalk = 0;
+    while (Date.now() - startedAt < timeoutMs) {
+      const page =
+        context.pages().find((candidate) => candidate.url().includes("onetalk.alibaba.com")) ?? context.pages()[0];
+      const url = page?.url() ?? "";
+      const onLoginPage = /login|signin|passport/i.test(url);
+      const onOnetalk = url.includes("onetalk.alibaba.com") && !onLoginPage;
+
+      if (onOnetalk && page) {
+        const rows = await page.locator(".contact-item-container").count().catch(() => 0);
+        if (rows > 0) {
+          return true; // 인박스가 실제로 떴음 = 확실히 로그인됨
+        }
+        stableOnetalk += 1;
+        if (stableOnetalk >= 8) {
+          return true; // 대화 0개여도 onetalk 안정 유지 = 로그인됨(빈 계정)
+        }
+      } else {
+        stableOnetalk = 0; // 로그인 페이지면 스트릭 리셋
+      }
+      await delay(1500);
+    }
+    return false;
+  } finally {
+    await browser.close().catch(() => undefined); // connectOverCDP는 close=연결 해제(크롬 안 죽임)
+  }
 }
 
 async function writeConnectionStatus(status: "active" | "needs_relogin", detail: string): Promise<void> {
@@ -141,9 +159,16 @@ console.log("\n순수 크롬 창이 떴어요 — 자동화 흔적이 없어서 
 console.log("⚠️ '대화가 있는 셀러 계정'으로 직접 로그인하세요(슬라이더도 직접 밀기).");
 console.log("로그인하면 onetalk 대화 화면이 뜨는지 보세요. 자동 이동이 안 되면 주소창에");
 console.log("onetalk.alibaba.com 을 직접 입력해도 됩니다 — 대화 화면이 뜨면 자동으로 감지합니다.");
-console.log("(Enter 누를 필요 없어요. 최대 5분 대기.)\n");
+console.log("(Enter 누를 필요 없어요. 인박스 대화가 뜨면 자동 감지. 최대 5분 대기.)\n");
 
-const connected = await waitForOnetalk(LOGIN_TIMEOUT_MS);
+const cdpReady = await waitForCdp(DEBUG_PORT);
+if (!cdpReady) {
+  console.error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 있으면 닫고 다시 시도하세요.");
+  chrome.kill("SIGTERM");
+  process.exit(1);
+}
+
+const connected = await waitForLogin(LOGIN_TIMEOUT_MS);
 
 if (connected) {
   // ★감지 직후 바로 닫으면 OneTalk 세션 쿠키/토큰이 프로필에 다 안 굳어, 추출 때 '로그인 페이지'로
