@@ -1,10 +1,11 @@
 // WhatsApp 커넥터 — mautrix-whatsapp(whatsmeow)와 같은 "브라우저 없이 WhatsApp Web 멀티디바이스
 // 프로토콜에 직접 붙는" 방식의 Node 등가물 Baileys를 쓴다.
 //   - 첫 실행: QR을 터미널에 띄움 → 폰(설정→연결된 기기→기기 연결)으로 스캔.
-//   - ★페어링 직후 WhatsApp이 "재시작 필요"(stream error 515)를 보낸다 → 자동 재연결해야
-//     로그인 완료 + 히스토리 동기화가 된다(로그아웃이 아닌 close는 재연결한다).
-//   - 세션은 .auth/whatsapp-baileys[--<label>] 에 로컬 저장(★서버로 안 감). 이후엔 QR 없이 재연결.
-//   - 초기 히스토리(messaging-history.set) → ChatRawConversation[] 정규화 → .data/<...>.json.
+//   - 세션은 .auth/whatsapp-baileys[--label] 에 로컬 저장(★서버로 안 감). 이후엔 QR 없이 재연결.
+//   - ★페어링 직후 WhatsApp은 stream error 515("restart required")로 끊는다 = 정상. 이때 재연결해야
+//     비로소 로그인 완료 + 히스토리 동기화가 시작된다. (loggedOut 외의 close는 재연결한다.)
+//   - syncFullHistory + 히스토리가 잠잠해질 때까지(debounce) 기다렸다가 ChatRawConversation[]로
+//     정규화해 outputFile 에 쓴다.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -27,9 +28,12 @@ const REPO_ROOT = resolve(here, "../../../..");
 const DEFAULT_AUTH_DIR = resolve(REPO_ROOT, ".auth/whatsapp-baileys");
 const DEFAULT_OUTPUT_FILE = resolve(REPO_ROOT, "apps/web/.data/whatsapp-conversations.json");
 
-// 연결 후 초기 히스토리 동기화를 기다리는 시간(기본 25초). 환경변수로 조정.
-const SYNC_WAIT_MS = Number(process.env.QUALIFLOW_WA_SYNC_MS) || 25_000;
-const MAX_RECONNECTS = 5;
+// 히스토리가 이 시간(ms)동안 더 안 오면 동기화 끝으로 보고 마무리한다(연결/이벤트마다 리셋).
+// 첫 페어링 직후 히스토리가 늦게 오기도 해서 넉넉히 둔다.
+const SYNC_QUIET_MS = Number(process.env.QUALIFLOW_WA_SYNC_MS) || 20_000;
+// 전체 상한(여기까진 무조건 마무리).
+const HARD_TIMEOUT_MS = 3 * 60_000;
+const MAX_RECONNECTS = 6;
 
 function extractText(content: WAMessageContent | null | undefined): string {
   if (!content) {
@@ -47,12 +51,6 @@ function extractText(content: WAMessageContent | null | undefined): string {
 function displayName(jid: string, contacts: Map<string, Contact>, chats: Map<string, Chat>): string {
   const contact = contacts.get(jid);
   return contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? jid.split("@")[0];
-}
-
-function disconnectStatusCode(error: unknown): number | undefined {
-  return typeof error === "object" && error !== null
-    ? (error as { output?: { statusCode?: number } }).output?.statusCode
-    : undefined;
 }
 
 export async function fetchWhatsApp(
@@ -80,22 +78,21 @@ export async function fetchWhatsApp(
   return new Promise<ChatRawConversation[]>((resolveFetch, rejectFetch) => {
     let finished = false;
     let reconnects = 0;
-    let finishTimer: ReturnType<typeof setTimeout> | undefined;
-    let current: ReturnType<typeof makeWASocket> | undefined;
+    let quietTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function finish(): Promise<void> {
       if (finished) {
         return;
       }
       finished = true;
-      if (finishTimer) {
-        clearTimeout(finishTimer);
+      if (quietTimer) {
+        clearTimeout(quietTimer);
       }
 
       const conversations: ChatRawConversation[] = [];
       for (const [jid, list] of messagesByJid) {
         if (jid.endsWith("@broadcast")) {
-          continue; // 상태(스토리) 등은 제외
+          continue; // 상태(스토리) 등 제외
         }
         const messages: ChatRawMessage[] = list
           .map((message) => ({
@@ -120,19 +117,24 @@ export async function fetchWhatsApp(
 
       await mkdir(dirname(outputFile), { recursive: true });
       await writeFile(outputFile, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
-
-      try {
-        current?.end(undefined);
-      } catch {
-        // 소켓 종료 실패는 무시
-      }
+      console.log(`📦 WhatsApp 대화 ${conversations.length}개 동기화 완료.`);
       resolveFetch(conversations);
     }
 
-    // 소켓을 만들고 이벤트를 건다. close(로그아웃 제외) 시 재연결을 위해 재호출된다.
+    // 히스토리가 잠잠해지면(SYNC_QUIET_MS 동안 새 이벤트 없음) 마무리. 연결/이벤트마다 리셋.
+    function scheduleFinish(): void {
+      if (finished) {
+        return;
+      }
+      if (quietTimer) {
+        clearTimeout(quietTimer);
+      }
+      quietTimer = setTimeout(() => void finish(), SYNC_QUIET_MS);
+    }
+
     function connect(): void {
-      const sock = makeWASocket({ auth: state });
-      current = sock;
+      // syncFullHistory: 새로 연결한 기기에 폰이 더 많은 과거 대화를 밀어주도록 요청.
+      const sock = makeWASocket({ auth: state, syncFullHistory: true });
       sock.ev.on("creds.update", saveCreds);
 
       sock.ev.on("connection.update", (update) => {
@@ -144,29 +146,25 @@ export async function fetchWhatsApp(
         }
 
         if (connection === "open") {
-          console.log("✅ WhatsApp 연결됨 — 최근 대화 동기화 대기 중...");
-          if (finishTimer) {
-            clearTimeout(finishTimer);
-          }
-          finishTimer = setTimeout(() => void finish(), SYNC_WAIT_MS);
+          console.log("✅ WhatsApp 연결됨 — 대화 동기화 대기 중...");
+          scheduleFinish();
         }
 
         if (connection === "close") {
-          if (finished) {
-            return; // finish가 닫은 소켓
-          }
-          const statusCode = disconnectStatusCode(lastDisconnect?.error);
+          const statusCode =
+            typeof lastDisconnect?.error === "object" && lastDisconnect?.error !== null
+              ? (lastDisconnect.error as { output?: { statusCode?: number } }).output?.statusCode
+              : undefined;
+
           if (statusCode === DisconnectReason.loggedOut) {
-            rejectFetch(new Error("WhatsApp 로그아웃됨 — 그 계정의 .auth 폴더를 지우고 다시 QR 스캔하세요."));
+            rejectFetch(new Error("WhatsApp 로그아웃됨 — 세션 폴더를 지우고 다시 QR 스캔하세요."));
             return;
           }
-          // ★페어링 직후 515(restart required)·일시적 끊김 → 재연결해야 로그인/동기화가 완료된다.
-          if (reconnects < MAX_RECONNECTS) {
+          // ★515(restart required) 등 loggedOut이 아닌 close는 재연결한다(페어링 직후 정상 흐름).
+          if (!finished && reconnects < MAX_RECONNECTS) {
             reconnects += 1;
-            console.log(`↻ 재연결(${reconnects}/${MAX_RECONNECTS})...`);
+            console.log(`🔄 재연결 (${reconnects}/${MAX_RECONNECTS})...`);
             connect();
-          } else {
-            rejectFetch(new Error("WhatsApp 재연결이 반복 실패했습니다. 잠시 후 다시 시도하세요."));
           }
         }
       });
@@ -185,6 +183,7 @@ export async function fetchWhatsApp(
         for (const message of messages) {
           collectMessage(message);
         }
+        scheduleFinish(); // 히스토리가 오는 동안 계속 미룬다(다 올 때까지 대기).
       });
 
       sock.ev.on("messages.upsert", ({ messages }) => {
@@ -195,8 +194,6 @@ export async function fetchWhatsApp(
     }
 
     connect();
-
-    // 안전 타임아웃: 끝내 동기화가 안 끝나도 멈춘다(모은 만큼 저장).
-    setTimeout(() => void finish(), SYNC_WAIT_MS + 5 * 60_000);
+    setTimeout(() => void finish(), HARD_TIMEOUT_MS); // 안전 상한
   });
 }
