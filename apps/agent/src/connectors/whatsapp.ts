@@ -35,6 +35,58 @@ const SYNC_QUIET_MS = Number(process.env.QUALIFLOW_WA_SYNC_MS) || 20_000;
 const HARD_TIMEOUT_MS = 3 * 60_000;
 const MAX_RECONNECTS = 6;
 
+// QUALIFLOW_WA_DEBUG=1 이면 Baileys/ libsignal 내부 로그를 그대로 본다(문제 진단용).
+const WA_DEBUG = process.env.QUALIFLOW_WA_DEBUG === "1";
+
+// Baileys 기본 로거는 info 레벨이라 내부 동작을 JSON으로 폭포처럼 찍는다. 조용한 로거를 주입해
+// 우리 로그(📥/📨/📦)만 남긴다. (ILogger는 패키지 루트에서 export 안 되어 구조가 같은 스텁을 쓴다.)
+type SilentLogger = {
+  level: string;
+  child: () => SilentLogger;
+  trace: (obj: unknown, msg?: string) => void;
+  debug: (obj: unknown, msg?: string) => void;
+  info: (obj: unknown, msg?: string) => void;
+  warn: (obj: unknown, msg?: string) => void;
+  error: (obj: unknown, msg?: string) => void;
+};
+const noop = (): void => undefined;
+const silentLogger: SilentLogger = {
+  level: "silent",
+  child: () => silentLogger,
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop
+};
+
+// libsignal(세션 협상)은 로거가 아니라 console.info/warn 으로 직접 찍는다(예: "Closing session:" +
+// SessionEntry 통째 덤프). 그 세션-처리 노이즈만 골라 가린다 — 우리 로그(이모지)는 통과.
+const LIBSIGNAL_NOISE = /^(Closing|Opening|Migrating|Removing|Session already)\b/;
+const originalConsole = { info: console.info, warn: console.warn };
+function isLibsignalNoise(args: unknown[]): boolean {
+  return typeof args[0] === "string" && LIBSIGNAL_NOISE.test(args[0]) && /session/i.test(args[0]);
+}
+function muteLibsignalNoise(): void {
+  if (WA_DEBUG) {
+    return;
+  }
+  console.info = (...args: unknown[]) => {
+    if (!isLibsignalNoise(args)) {
+      originalConsole.info(...(args as []));
+    }
+  };
+  console.warn = (...args: unknown[]) => {
+    if (!isLibsignalNoise(args)) {
+      originalConsole.warn(...(args as []));
+    }
+  };
+}
+function restoreConsole(): void {
+  console.info = originalConsole.info;
+  console.warn = originalConsole.warn;
+}
+
 function extractText(content: WAMessageContent | null | undefined): string {
   if (!content) {
     return "";
@@ -59,6 +111,7 @@ export async function fetchWhatsApp(
   const authDir = options.authDir ?? DEFAULT_AUTH_DIR;
   const outputFile = options.outputFile ?? DEFAULT_OUTPUT_FILE;
   await mkdir(authDir, { recursive: true });
+  muteLibsignalNoise(); // libsignal 콘솔 노이즈 가리기(디버그 모드 아니면)
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
   const chats = new Map<string, Chat>();
@@ -117,6 +170,7 @@ export async function fetchWhatsApp(
 
       await mkdir(dirname(outputFile), { recursive: true });
       await writeFile(outputFile, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
+      restoreConsole();
       console.log(`📦 WhatsApp 대화 ${conversations.length}개 동기화 완료.`);
       resolveFetch(conversations);
     }
@@ -134,7 +188,11 @@ export async function fetchWhatsApp(
 
     function connect(): void {
       // syncFullHistory: 새로 연결한 기기에 폰이 더 많은 과거 대화를 밀어주도록 요청.
-      const sock = makeWASocket({ auth: state, syncFullHistory: true });
+      const sock = makeWASocket({
+        auth: state,
+        syncFullHistory: true,
+        ...(WA_DEBUG ? {} : { logger: silentLogger })
+      });
       sock.ev.on("creds.update", saveCreds);
 
       sock.ev.on("connection.update", (update) => {
@@ -157,6 +215,7 @@ export async function fetchWhatsApp(
               : undefined;
 
           if (statusCode === DisconnectReason.loggedOut) {
+            restoreConsole();
             rejectFetch(new Error("WhatsApp 로그아웃됨 — 세션 폴더를 지우고 다시 QR 스캔하세요."));
             return;
           }
