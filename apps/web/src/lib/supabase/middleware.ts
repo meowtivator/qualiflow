@@ -3,7 +3,9 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { getSupabasePublicConfig } from "./config";
 
-const PUBLIC_PATHS = ["/healthz", "/login", "/auth/callback", "/auth/otp"];
+// /api/agents/pair 는 에이전트(로그인 세션 없음)가 호출하므로 공개. 보안은 세션이 아니라 페어링 코드가 책임진다.
+// (/api/agents/pairing-code 는 여기 없음 → 로그인 게이트 그대로 적용됨)
+const PUBLIC_PATHS = ["/healthz", "/login", "/auth/callback", "/auth/otp", "/api/agents/pair"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((publicPath) => pathname === publicPath || pathname.startsWith(`${publicPath}/`));
