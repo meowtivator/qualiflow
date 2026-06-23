@@ -15,7 +15,8 @@
     "@qualiflow/adapter-chat": "workspace:*",
     "@qualiflow/core": "workspace:*",
     "@whiskeysockets/baileys": "7.0.0-rc13",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "telegram": "^2.26.22"
   },
   "devDependencies": {
     "@types/node": "25.9.1",

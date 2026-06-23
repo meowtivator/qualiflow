@@ -8,11 +8,14 @@
 //   pair <코드> | status                (보안 레이어 — 나중)
 
 import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, sessionPath } from "./accounts";
+import { loginTelegram } from "./connectors/telegram";
+import { loadLocalEnv } from "./env";
 import { fetchChannel, fetchWhatsAppInbox, loginAlibaba } from "./fetch";
 import { pair } from "./pair";
 import { loadToken } from "./token-store";
 
 async function main() {
+  loadLocalEnv(); // apps/web/.env.local 의 TELEGRAM_* 등을 읽어 process.env에 넣는다.
   const args = process.argv.slice(2);
   const command = args[0];
 
@@ -46,6 +49,9 @@ async function main() {
       } else if (channel === "whatsapp") {
         console.log("이 계정 전용으로 WhatsApp QR을 띄웁니다...");
         await fetchWhatsAppInbox(account.label);
+      } else if (channel === "telegram") {
+        console.log("Telegram 전화 코드 로그인을 시작합니다(전화번호 → 받은 코드 입력)...");
+        await loginTelegram(sessionPath("telegram", account.label));
       } else {
         console.log(`'${channel}' 커넥터는 다음 단계입니다 — 등록만 완료(로그인은 추후).`);
       }

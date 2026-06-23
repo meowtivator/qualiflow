@@ -3,15 +3,16 @@
 //   whatsapp : Baileys(connectors/whatsapp.ts). 계정별 authDir/outputFile 전달.
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createAlibabaAdapterFromConversations, type AlibabaRawConversation } from "@qualiflow/adapter-alibaba";
-import { createChatAdapter } from "@qualiflow/adapter-chat";
+import { createChatAdapter, type ChatRawConversation } from "@qualiflow/adapter-chat";
 import type { ConversationAdapter } from "@qualiflow/core";
 
 import { dataFile, sessionPath } from "./accounts";
+import { fetchTelegram } from "./connectors/telegram";
 import { fetchWhatsApp } from "./connectors/whatsapp";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,13 @@ export type FetchSummary = {
   messageCount: number;
   sample: { lead: string; lastText: string }[];
 };
+
+// 정규화 전 raw 대화를 계정별 데이터 파일에 쓴다(웹 인박스가 읽음). whatsapp은 커넥터 내부에서
+// 직접 쓰지만, telegram은 데이터를 반환만 하므로 여기서 쓴다.
+async function writeChatData(file: string, conversations: ChatRawConversation[]): Promise<void> {
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
+}
 
 // 정규화된 어댑터에서 리드/스레드/메시지 수 + 샘플을 뽑는다(채널 공통).
 async function summarize(
@@ -107,6 +115,13 @@ export async function fetchWhatsAppInbox(label: string): Promise<FetchSummary> {
   return summarize("whatsapp", label, conversations.length, createChatAdapter("whatsapp", conversations));
 }
 
+export async function fetchTelegramInbox(label: string): Promise<FetchSummary> {
+  console.log(`🔌 Telegram(${label}) 커넥터 실행 — gramjs로 내 계정 인박스를 읽습니다...`);
+  const conversations = await fetchTelegram(sessionPath("telegram", label));
+  await writeChatData(dataFile("telegram", label), conversations);
+  return summarize("telegram", label, conversations.length, createChatAdapter("telegram", conversations));
+}
+
 export async function fetchChannel(channel: string, label: string, options: { cached: boolean }): Promise<FetchSummary> {
   switch (channel) {
     case "alibaba":
@@ -114,8 +129,8 @@ export async function fetchChannel(channel: string, label: string, options: { ca
     case "whatsapp":
       return fetchWhatsAppInbox(label);
     case "telegram":
-      throw new Error("아직 'telegram' 커넥터(리더)가 없습니다. 다음 단계에서 추가합니다.");
+      return fetchTelegramInbox(label);
     default:
-      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp.`);
+      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram.`);
   }
 }
