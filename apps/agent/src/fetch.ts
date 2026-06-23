@@ -210,6 +210,25 @@ export async function fetchChannel(channel: string, label: string, options: { ca
   }
 }
 
+// 불러온 대화의 threadId + 이름 목록(발송 대상을 고를 때 쓴다). 저장된 데이터에서 읽는다.
+export async function listChannelThreads(channel: string, label: string): Promise<{ id: string; name: string }[]> {
+  if (channel === "alibaba") {
+    try {
+      const raw = JSON.parse(await readFile(dataFile("alibaba", label), "utf8")) as AlibabaRawConversation[];
+      return raw
+        .map((conversation) => ({
+          id: conversation.messages[0]?.conversationCode ?? "",
+          name: conversation.contact?.name ?? conversation.contact?.loginId ?? "?"
+        }))
+        .filter((thread) => thread.id);
+    } catch {
+      return [];
+    }
+  }
+  const raw = await readChatData(dataFile(channel, label));
+  return raw.map((conversation) => ({ id: conversation.threadId, name: conversation.contact?.name ?? conversation.contact?.id ?? "?" }));
+}
+
 // 채널별 발송 라우터. recipient = "me"(나에게 — 텔레/왓츠앱) | 불러온 대화의 threadId(실제 채팅방).
 export async function sendMessage(channel: string, label: string, recipient: string, text: string): Promise<void> {
   switch (channel) {

@@ -11,7 +11,7 @@ import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, s
 import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
 import { loadLocalEnv } from "./env";
-import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, loginAlibaba, sendMessage } from "./fetch";
+import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, listChannelThreads, loginAlibaba, sendMessage } from "./fetch";
 import { pair } from "./pair";
 import { loadToken } from "./token-store";
 
@@ -110,6 +110,26 @@ async function main() {
       return;
     }
 
+    case "threads": {
+      const channel = args[1];
+      if (!channel) {
+        console.error("사용법: threads <channel> [label]  — 불러온 대화의 threadId(발송 대상) 목록");
+        process.exitCode = 1;
+        return;
+      }
+      const label = await resolveLabel(channel, args[2]);
+      const threads = await listChannelThreads(channel, label);
+      if (!threads.length) {
+        console.log(`${channel}/${label}: 불러온 대화가 없습니다(먼저 'fetch ${channel} ${label}').`);
+        return;
+      }
+      console.log(`${channel}/${label} 대화 (threadId — 이름):`);
+      for (const thread of threads) {
+        console.log(`  ${thread.id}  —  ${thread.name}`);
+      }
+      return;
+    }
+
     case "send": {
       const channel = args[1];
       const label = args[2];
@@ -160,6 +180,7 @@ async function main() {
           "  remove <channel> <label>            계정 삭제(세션·데이터)",
           "  fetch <channel> [label] [--cached]  인박스 긁기 → 정규화",
           "  fetch all [--cached]                등록된 모든 계정 한 번에 → 합산 요약",
+          "  threads <channel> [label]           불러온 대화의 threadId 목록(발송 대상 고르기)",
           "  send <channel> <label> <받는이> <텍스트>   메시지 발송(받는이=me 또는 threadId)",
           "  pair <코드> | status                (보안 레이어 — 나중)"
         ].join("\n")
