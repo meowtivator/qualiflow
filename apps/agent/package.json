@@ -1,0 +1,23 @@
+{
+  "name": "@qualiflow/agent",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "QualiFlow local agent — pairs with the cloud and reads channel inboxes on the user's machine.",
+  "scripts": {
+    "agent": "tsx ./src/cli.ts",
+    "pair": "tsx ./src/cli.ts pair",
+    "read": "tsx ./src/cli.ts read",
+    "status": "tsx ./src/cli.ts status",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@qualiflow/adapter-alibaba": "workspace:*",
+    "@qualiflow/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.1",
+    "tsx": "4.20.6",
+    "typescript": "6.0.3"
+  }
+}
