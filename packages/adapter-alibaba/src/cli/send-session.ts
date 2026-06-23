@@ -92,15 +92,35 @@ async function waitForInbox(page: Page): Promise<boolean> {
   return false;
 }
 
-// 입력창을 후보 셀렉터들로 찾아 첫 번째로 보이는 것을 반환(없으면 null).
-async function findComposer(page: Page): Promise<{ selector: string } | null> {
-  for (const selector of COMPOSER_CANDIDATES) {
-    const locator = page.locator(selector).first();
+// 입력창 찾기. ①env로 셀렉터를 직접 주면 그걸 우선. ②아니면 후보들 중 '화면 가장 아래' 보이는 것을
+// 고른다 — 입력창은 보통 대화 하단에 있어, 상단 검색창(첫 textarea)을 잘못 잡는 걸 피한다.
+async function findComposer(page: Page): Promise<{ selector: string; index: number } | null> {
+  const override = process.env.QUALIFLOW_ALIBABA_COMPOSER;
+  if (override) {
+    const locator = page.locator(override).first();
     if (await locator.isVisible().catch(() => false)) {
-      return { selector };
+      return { selector: override, index: 0 };
     }
   }
-  return null;
+  let best: { selector: string; index: number; y: number } | null = null;
+  for (const selector of COMPOSER_CANDIDATES) {
+    if (selector === override) {
+      continue;
+    }
+    const locator = page.locator(selector);
+    const count = await locator.count().catch(() => 0);
+    for (let index = 0; index < count; index += 1) {
+      const item = locator.nth(index);
+      if (!(await item.isVisible().catch(() => false))) {
+        continue;
+      }
+      const box = await item.boundingBox().catch(() => null);
+      if (box && (!best || box.y > best.y)) {
+        best = { selector, index, y: box.y };
+      }
+    }
+  }
+  return best ? { selector: best.selector, index: best.index } : null;
 }
 
 async function main(): Promise<void> {
@@ -160,9 +180,9 @@ async function main(): Promise<void> {
         process.exitCode = 1;
         return;
       }
-      console.log(`입력창 발견: ${composer.selector}`);
+      console.log(`입력창 발견: ${composer.selector} (#${composer.index})`);
 
-      const input = page.locator(composer.selector).first();
+      const input = page.locator(composer.selector).nth(composer.index);
       await input.click({ timeout: 3000 }).catch(() => undefined);
       await input.fill(TEXT).catch(async () => {
         // contenteditable은 fill이 안 먹기도 해서 타이핑으로 폴백
