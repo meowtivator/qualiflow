@@ -146,9 +146,11 @@ export async function fetchInstagram(profileDir: string): Promise<ChatRawConvers
     }
 
     const viewerPk = String(inbox.viewer?.pk ?? "");
+    const threads = inbox.inbox.threads ?? [];
+    console.log(`📥 인스타 인박스: 스레드 ${threads.length}개 발견 (내 pk=${viewerPk || "?"})`);
     const conversations: ChatRawConversation[] = [];
 
-    for (const thread of inbox.inbox.threads ?? []) {
+    for (const thread of threads) {
       const messages: ChatRawMessage[] = [];
       for (const item of thread.items ?? []) {
         if (item.item_type !== "text" || !item.text) {
