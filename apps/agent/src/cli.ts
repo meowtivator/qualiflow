@@ -8,6 +8,7 @@
 //   pair <코드> | status                (보안 레이어 — 나중)
 
 import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, sessionPath } from "./accounts";
+import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
 import { loadLocalEnv } from "./env";
 import { fetchChannel, fetchWhatsAppInbox, loginAlibaba } from "./fetch";
@@ -37,7 +38,7 @@ async function main() {
       const channel = args[1];
       const label = args[2];
       if (!channel || !label) {
-        console.error("사용법: add <channel: alibaba|whatsapp|telegram> <label>");
+        console.error("사용법: add <channel: alibaba|whatsapp|telegram|instagram> <label>");
         process.exitCode = 1;
         return;
       }
@@ -52,6 +53,9 @@ async function main() {
       } else if (channel === "telegram") {
         console.log("Telegram 전화 코드 로그인을 시작합니다(전화번호 → 받은 코드 입력)...");
         await loginTelegram(sessionPath("telegram", account.label));
+      } else if (channel === "instagram") {
+        console.log("Instagram 로그인 창을 엽니다(브라우저에서 직접 로그인)...");
+        await loginInstagram(sessionPath("instagram", account.label));
       } else {
         console.log(`'${channel}' 커넥터는 다음 단계입니다 — 등록만 완료(로그인은 추후).`);
       }

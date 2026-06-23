@@ -12,6 +12,7 @@ import { createChatAdapter, type ChatRawConversation } from "@qualiflow/adapter-
 import type { ConversationAdapter } from "@qualiflow/core";
 
 import { dataFile, sessionPath } from "./accounts";
+import { fetchInstagram } from "./connectors/instagram";
 import { fetchTelegram } from "./connectors/telegram";
 import { fetchWhatsApp } from "./connectors/whatsapp";
 
@@ -122,6 +123,13 @@ export async function fetchTelegramInbox(label: string): Promise<FetchSummary> {
   return summarize("telegram", label, conversations.length, createChatAdapter("telegram", conversations));
 }
 
+export async function fetchInstagramInbox(label: string): Promise<FetchSummary> {
+  console.log(`🔌 Instagram(${label}) 커넥터 실행 — 웹 세션으로 DM API를 읽습니다...`);
+  const conversations = await fetchInstagram(sessionPath("instagram", label));
+  await writeChatData(dataFile("instagram", label), conversations);
+  return summarize("instagram", label, conversations.length, createChatAdapter("instagram", conversations));
+}
+
 export async function fetchChannel(channel: string, label: string, options: { cached: boolean }): Promise<FetchSummary> {
   switch (channel) {
     case "alibaba":
@@ -130,7 +138,9 @@ export async function fetchChannel(channel: string, label: string, options: { ca
       return fetchWhatsAppInbox(label);
     case "telegram":
       return fetchTelegramInbox(label);
+    case "instagram":
+      return fetchInstagramInbox(label);
     default:
-      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram.`);
+      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram.`);
   }
 }
