@@ -11,7 +11,7 @@ import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, s
 import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
 import { loadLocalEnv } from "./env";
-import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, loginAlibaba } from "./fetch";
+import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, loginAlibaba, sendMessage } from "./fetch";
 import { pair } from "./pair";
 import { loadToken } from "./token-store";
 
@@ -110,6 +110,23 @@ async function main() {
       return;
     }
 
+    case "send": {
+      const channel = args[1];
+      const label = args[2];
+      const recipient = args[3];
+      const text = args.slice(4).join(" ");
+      if (!channel || !label || !recipient || !text) {
+        console.error("사용법: send <channel> <label> <recipient> <text>");
+        console.error("  recipient: me(나에게 — 텔레/왓츠앱) 또는 불러온 대화의 threadId(실제 채팅방)");
+        console.error('  예: send telegram main me "테스트 메시지"');
+        process.exitCode = 1;
+        return;
+      }
+      await sendMessage(channel, label, recipient, text);
+      console.log(`✅ ${channel}/${label} → ${recipient} 발송 요청 완료`);
+      return;
+    }
+
     case "pair": {
       const code = args[1];
       if (!code) {
@@ -143,6 +160,7 @@ async function main() {
           "  remove <channel> <label>            계정 삭제(세션·데이터)",
           "  fetch <channel> [label] [--cached]  인박스 긁기 → 정규화",
           "  fetch all [--cached]                등록된 모든 계정 한 번에 → 합산 요약",
+          "  send <channel> <label> <받는이> <텍스트>   메시지 발송(받는이=me 또는 threadId)",
           "  pair <코드> | status                (보안 레이어 — 나중)"
         ].join("\n")
       );

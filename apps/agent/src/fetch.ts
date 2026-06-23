@@ -12,9 +12,9 @@ import { createChatAdapter, type ChatRawConversation } from "@qualiflow/adapter-
 import type { ConversationAdapter } from "@qualiflow/core";
 
 import { dataFile, listAccounts, sessionPath } from "./accounts";
-import { fetchInstagram } from "./connectors/instagram";
-import { fetchTelegram } from "./connectors/telegram";
-import { fetchWhatsApp } from "./connectors/whatsapp";
+import { fetchInstagram, sendInstagram } from "./connectors/instagram";
+import { fetchTelegram, sendTelegram } from "./connectors/telegram";
+import { fetchWhatsApp, sendWhatsApp } from "./connectors/whatsapp";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(here, "../../..");
@@ -104,6 +104,24 @@ export function loginAlibaba(profile: string): Promise<void> {
   });
 }
 
+// 알리바바 발송(inquiry:send)을 계정별 프로필 + 대화코드 + 텍스트로 실행한다(브라우저 자동화).
+function sendAlibaba(profile: string, conversation: string, text: string): Promise<void> {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn("pnpm", ["--filter", "@qualiflow/adapter-alibaba", "inquiry:send"], {
+      cwd: REPO_ROOT,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        QUALIFLOW_ALIBABA_PROFILE: profile,
+        QUALIFLOW_ALIBABA_CONVERSATION: conversation,
+        QUALIFLOW_ALIBABA_TEXT: text
+      }
+    });
+    child.on("error", rejectRun);
+    child.on("exit", (code) => (code === 0 ? resolveRun() : rejectRun(new Error(`발송 종료 코드 ${code}`))));
+  });
+}
+
 export async function fetchAlibaba(label: string, options: { cached: boolean }): Promise<FetchSummary> {
   const profile = sessionPath("alibaba", label);
   const output = dataFile("alibaba", label);
@@ -187,6 +205,28 @@ export async function fetchChannel(channel: string, label: string, options: { ca
       return fetchTelegramInbox(label, options);
     case "instagram":
       return fetchInstagramInbox(label, options);
+    default:
+      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram.`);
+  }
+}
+
+// 채널별 발송 라우터. recipient = "me"(나에게 — 텔레/왓츠앱) | 불러온 대화의 threadId(실제 채팅방).
+export async function sendMessage(channel: string, label: string, recipient: string, text: string): Promise<void> {
+  switch (channel) {
+    case "telegram":
+      return sendTelegram(sessionPath("telegram", label), recipient, text);
+    case "whatsapp":
+      return sendWhatsApp({ authDir: sessionPath("whatsapp", label), to: recipient, text });
+    case "instagram":
+      if (recipient === "me") {
+        throw new Error("인스타는 'me' 발송이 없습니다. 불러온 대화의 threadId를 쓰세요(예: 내가 관리하는 테스트 대화).");
+      }
+      return sendInstagram(sessionPath("instagram", label), recipient, text);
+    case "alibaba":
+      if (recipient === "me") {
+        throw new Error("알리바바는 'me' 발송이 없습니다. 불러온 대화의 threadId(대화코드)를 쓰세요.");
+      }
+      return sendAlibaba(sessionPath("alibaba", label), recipient, text);
     default:
       throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram.`);
   }
