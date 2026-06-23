@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { chromium } from "playwright-core";
+import { chromium, type Page } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
 
@@ -24,7 +24,6 @@ const OUTPUT_PATH = process.env.QUALIFLOW_ALIBABA_OUTPUT || resolve("../../apps/
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
 const MAX_CONVERSATIONS = 30;
-const WAIT_MS = 2500; // 페이지 첫 로딩 대기
 const OPEN_TIMEOUT_MS = 10_000; // 한 대화를 열고 그 대화 메시지가 fiber에 뜰 때까지 최대 대기
 const POLL_MS = 400; // 폴링 간격
 const MAX_SCROLLS = 60; // 한 대화에서 위로 스크롤하며 옛 메시지를 끌어올 최대 횟수(폭주 방지 상한)
@@ -60,6 +59,36 @@ async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
   }
   return false;
+}
+
+const INBOX_READY_TIMEOUT_MS = 40_000; // 대화 목록이 뜰 때까지 최대 대기
+const INBOX_POLL_MS = 500;
+const LOGIN_STREAK_LIMIT = 16; // 로그인/passport 페이지가 16×500ms=8초 연속이면 진짜 만료로 판정
+
+// onetalk 세션 상태를 폴링으로 판정한다.
+//   "ready"   = 대화 목록(.contact-item-container)이 떴음 → 세션 유효 + 로딩 완료
+//   "login"   = 로그인/passport 페이지에 8초+ 연속 머무름 → 세션 만료
+//   "timeout" = 둘 다 아님(로딩이 느리거나 인박스가 비어 있음) → 추출은 그래도 시도
+// ⚠️ 예전엔 2.5초 뒤 URL만 한 번 보고 판정했는데, onetalk는 유효 세션이어도 passport(SSO)를
+//    잠깐 경유하므로 그 순간을 "만료"로 오판했다. 이제 "행이 뜨는가"를 본다(= login-session과 동일 기준).
+async function waitForInbox(page: Page): Promise<"ready" | "login" | "timeout"> {
+  const deadline = Date.now() + INBOX_READY_TIMEOUT_MS;
+  let loginStreak = 0;
+  while (Date.now() < deadline) {
+    const rowCount = await page
+      .locator(".contact-item-container")
+      .count()
+      .catch(() => 0);
+    if (rowCount > 0) return "ready";
+    if (/login|signin|passport/i.test(page.url())) {
+      loginStreak += 1;
+      if (loginStreak >= LOGIN_STREAK_LIMIT) return "login";
+    } else {
+      loginStreak = 0;
+    }
+    await page.waitForTimeout(INBOX_POLL_MS);
+  }
+  return "timeout";
 }
 
 // 페이지 안에서 실행되는 추출 스크립트: React fiber 트리를 훑어 itemData(메시지)를 모은다.
@@ -270,14 +299,18 @@ async function main() {
   const page = context.pages()[0] ?? (await context.newPage());
 
   await page.goto(ONETALK_URL, { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => undefined);
-  await page.waitForTimeout(WAIT_MS);
 
-  if (/login|signin|passport/i.test(page.url())) {
-    console.error("세션이 만료된 것 같아요(로그인 페이지로 이동). 다시 inquiry:login 으로 로그인하세요.");
+  // 세션 유효 + 인박스 로딩을 폴링으로 확인(URL만 보던 성급한 만료 오판 제거).
+  const inboxState = await waitForInbox(page);
+  if (inboxState === "login") {
+    console.error("세션이 만료된 것 같아요(로그인 페이지에 계속 머무름). 다시 'add alibaba <라벨>'로 로그인하세요.");
     await browser.close();
     chrome.kill("SIGTERM");
     process.exitCode = 1;
     return;
+  }
+  if (inboxState === "timeout") {
+    console.log("⏳ 대화 목록이 시간 내에 안 떴어요(대화가 없거나 로딩이 느림) — 그래도 추출을 시도합니다.");
   }
 
   // 클릭을 가로막는 모달(예: 오프라인 안내 팝업)을 닫는다. 안 닫으면 대화 클릭이 막혀 0개가 나온다.
