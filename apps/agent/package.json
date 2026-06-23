@@ -6,6 +6,7 @@
   "description": "QualiFlow local agent — pairs with the cloud and reads channel inboxes on the user's machine.",
   "scripts": {
     "agent": "tsx ./src/cli.ts",
+    "fetch": "tsx ./src/cli.ts fetch",
     "pair": "tsx ./src/cli.ts pair",
     "read": "tsx ./src/cli.ts read",
     "status": "tsx ./src/cli.ts status",
