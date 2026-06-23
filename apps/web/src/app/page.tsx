@@ -1,6 +1,7 @@
-import { MessageSquare, Settings } from "lucide-react";
+import { Cpu, MessageSquare, Settings } from "lucide-react";
 import Link from "next/link";
 
+import { AgentConnector, type AgentRow } from "@/features/agents/agent-connector";
 import { ConnectorSettings } from "@/features/connectors/connector-settings";
 import { MessengerWorkspace } from "@/features/messenger/messenger-workspace";
 import { loadConversationSource } from "@/lib/conversation-source";
@@ -103,7 +104,7 @@ async function loadRuntimeStatus(): Promise<RuntimeStatus> {
   }
 }
 
-function AppSidebar({ currentView }: { currentView: "connectors" | "messenger" }) {
+function AppSidebar({ currentView }: { currentView: "connectors" | "messenger" | "agents" }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-main">
@@ -120,6 +121,10 @@ function AppSidebar({ currentView }: { currentView: "connectors" | "messenger" }
           <Link className={`nav-item ${currentView === "messenger" ? "active" : ""}`} href="/">
             <MessageSquare size={16} />
             <span>메신저</span>
+          </Link>
+          <Link className={`nav-item ${currentView === "agents" ? "active" : ""}`} href="/?view=agents">
+            <Cpu size={16} />
+            <span>에이전트</span>
           </Link>
         </nav>
       </div>
@@ -138,7 +143,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const params = await searchParams;
   const runtimeStatus = await loadRuntimeStatus();
   const viewParam = Array.isArray(params?.view) ? params.view[0] : params?.view;
-  const currentView = viewParam === "connectors" ? "connectors" : "messenger";
+  const currentView =
+    viewParam === "connectors" ? "connectors" : viewParam === "agents" ? "agents" : "messenger";
 
   if (currentView === "connectors") {
     return (
@@ -165,6 +171,56 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </header>
 
           <ConnectorSettings />
+        </main>
+      </div>
+    );
+  }
+
+  if (currentView === "agents") {
+    const devMode = process.env.NODE_ENV !== "production" && process.env.QUALIFLOW_DEV_SEED_LOGIN === "1";
+    let isAuthed = false;
+    let agents: AgentRow[] = [];
+
+    if (isSupabaseConfigured()) {
+      const supabase = await createServerSupabaseClient();
+      const {
+        data: { user }
+      } = await supabase.auth.getUser();
+      isAuthed = Boolean(user);
+
+      if (user) {
+        const { data } = await supabase
+          .from("agents")
+          .select("id,label,platform,paired_at,last_seen_at,revoked_at,created_at")
+          .order("created_at", { ascending: false });
+        agents = (data as AgentRow[] | null) ?? [];
+      }
+    }
+
+    return (
+      <div className="app-shell">
+        <AppSidebar currentView="agents" />
+
+        <main className="main scroll-main">
+          <header className="topbar">
+            <div>
+              <h1 className="page-title">에이전트</h1>
+              <p className="caption">로컬 에이전트를 페어링하고, 연결되어 저장된 에이전트를 확인합니다.</p>
+            </div>
+            <div className="status-group">
+              <span className={`status-pill ${runtimeStatus.tone}`}>
+                {runtimeStatus.label}
+                {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
+              </span>
+              {runtimeStatus.showSignOut ? (
+                <a className="status-link" href="/auth/sign-out">
+                  로그아웃
+                </a>
+              ) : null}
+            </div>
+          </header>
+
+          <AgentConnector agents={agents} devMode={devMode} isAuthed={isAuthed} />
         </main>
       </div>
     );
