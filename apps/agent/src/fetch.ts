@@ -1,7 +1,6 @@
-// 채널 커넥터 실행 → 정규화 → 요약. 채널별로 런타임이 다르다:
-//   alibaba  : 브라우저 RE(기존 inquiry:extract)를 그대로 호출(로직 미변경, 호출 위치만 에이전트로).
-//   whatsapp : Baileys(브라우저 없이 WhatsApp Web 멀티디바이스 프로토콜) — connectors/whatsapp.ts.
-// 정규화는 새로 짜지 않고 기존 어댑터(@qualiflow/adapter-*)를 재사용한다(공유 계약).
+// 채널 커넥터 실행 → 정규화 → 요약. 계정별 세션/출력 경로를 써서 다계정을 지원한다.
+//   alibaba  : 브라우저 RE(inquiry:extract)를 그대로 호출(로직 미변경). 계정별 프로필/출력은 env로 전달.
+//   whatsapp : Baileys(connectors/whatsapp.ts). 계정별 authDir/outputFile 전달.
 
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -12,16 +11,15 @@ import { createAlibabaAdapterFromConversations, type AlibabaRawConversation } fr
 import { createChatAdapter } from "@qualiflow/adapter-chat";
 import type { ConversationAdapter } from "@qualiflow/core";
 
+import { dataFile, sessionPath } from "./accounts";
 import { fetchWhatsApp } from "./connectors/whatsapp";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(here, "../../..");
-const ALIBABA_DATA = process.env.QUALIFLOW_DATA_DIR
-  ? resolve(process.env.QUALIFLOW_DATA_DIR, "alibaba-conversations.json")
-  : resolve(REPO_ROOT, "apps/web/.data/alibaba-conversations.json");
 
 export type FetchSummary = {
   channel: string;
+  label: string;
   conversationCount: number;
   leadCount: number;
   threadCount: number;
@@ -30,7 +28,12 @@ export type FetchSummary = {
 };
 
 // 정규화된 어댑터에서 리드/스레드/메시지 수 + 샘플을 뽑는다(채널 공통).
-async function summarize(channel: string, conversationCount: number, adapter: ConversationAdapter): Promise<FetchSummary> {
+async function summarize(
+  channel: string,
+  label: string,
+  conversationCount: number,
+  adapter: ConversationAdapter
+): Promise<FetchSummary> {
   const leadPage = await adapter.listLeads?.();
   const threadPage = await adapter.listThreads();
   const leads = leadPage?.items ?? [];
@@ -51,50 +54,67 @@ async function summarize(channel: string, conversationCount: number, adapter: Co
     }
   }
 
-  return { channel, conversationCount, leadCount: leads.length, threadCount: threads.length, messageCount, sample };
+  return { channel, label, conversationCount, leadCount: leads.length, threadCount: threads.length, messageCount, sample };
 }
 
-// 알리바바 RE(inquiry:extract)를 그대로 자식 프로세스로 실행한다. 로직 미변경, 호출만.
-function runAlibabaExtractor(): Promise<void> {
+// 알리바바 RE를 계정별 프로필/출력으로 실행한다(로직 미변경, env로 경로만 주입).
+function runAlibabaExtractor(profile: string, output: string): Promise<void> {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn("pnpm", ["--filter", "@qualiflow/adapter-alibaba", "inquiry:extract"], {
       cwd: REPO_ROOT,
-      stdio: "inherit"
+      stdio: "inherit",
+      env: { ...process.env, QUALIFLOW_ALIBABA_PROFILE: profile, QUALIFLOW_ALIBABA_OUTPUT: output }
     });
     child.on("error", rejectRun);
     child.on("exit", (code) =>
-      code === 0 ? resolveRun() : rejectRun(new Error(`추출기 종료 코드 ${code} (세션 만료면 inquiry:login 후 재시도)`))
+      code === 0 ? resolveRun() : rejectRun(new Error(`추출기 종료 코드 ${code} (세션 만료면 'add alibaba <라벨>'로 재로그인)`))
     );
   });
 }
 
-export async function fetchAlibaba(options: { cached: boolean }): Promise<FetchSummary> {
+// 알리바바 로그인(inquiry:login)을 계정별 프로필로 실행한다(add 시 사용).
+export function loginAlibaba(profile: string): Promise<void> {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn("pnpm", ["--filter", "@qualiflow/adapter-alibaba", "inquiry:login"], {
+      cwd: REPO_ROOT,
+      stdio: "inherit",
+      env: { ...process.env, QUALIFLOW_ALIBABA_PROFILE: profile }
+    });
+    child.on("error", rejectRun);
+    child.on("exit", (code) => (code === 0 ? resolveRun() : rejectRun(new Error(`로그인 종료 코드 ${code}`))));
+  });
+}
+
+export async function fetchAlibaba(label: string, options: { cached: boolean }): Promise<FetchSummary> {
+  const profile = sessionPath("alibaba", label);
+  const output = dataFile("alibaba", label);
   if (options.cached) {
     console.log("🗂  --cached: 이미 추출된 데이터를 읽습니다(RE 미실행).");
   } else {
-    console.log("🔌 알리바바 커넥터 실행 — 전용 크롬으로 인박스를 읽습니다(로그인 세션 필요)...");
-    await runAlibabaExtractor();
+    console.log(`🔌 알리바바(${label}) 커넥터 실행 — 전용 크롬으로 인박스를 읽습니다...`);
+    await runAlibabaExtractor(profile, output);
   }
-  const raw = JSON.parse(await readFile(ALIBABA_DATA, "utf8")) as AlibabaRawConversation[];
-  return summarize("alibaba", raw.length, createAlibabaAdapterFromConversations(raw));
+  const raw = JSON.parse(await readFile(output, "utf8")) as AlibabaRawConversation[];
+  return summarize("alibaba", label, raw.length, createAlibabaAdapterFromConversations(raw));
 }
 
-export async function fetchWhatsAppInbox(): Promise<FetchSummary> {
-  console.log("🔌 WhatsApp 커넥터 실행 — Baileys로 WhatsApp Web에 연결합니다...");
-  const conversations = await fetchWhatsApp();
-  return summarize("whatsapp", conversations.length, createChatAdapter("whatsapp", conversations));
+export async function fetchWhatsAppInbox(label: string): Promise<FetchSummary> {
+  console.log(`🔌 WhatsApp(${label}) 커넥터 실행 — Baileys로 WhatsApp Web에 연결합니다...`);
+  const conversations = await fetchWhatsApp({
+    authDir: sessionPath("whatsapp", label),
+    outputFile: dataFile("whatsapp", label)
+  });
+  return summarize("whatsapp", label, conversations.length, createChatAdapter("whatsapp", conversations));
 }
 
-// 채널 라우터. 아직 리더가 없는 채널은 정직하게 알린다.
-export async function fetchChannel(channel: string, options: { cached: boolean }): Promise<FetchSummary> {
+export async function fetchChannel(channel: string, label: string, options: { cached: boolean }): Promise<FetchSummary> {
   switch (channel) {
     case "alibaba":
-      return fetchAlibaba(options);
+      return fetchAlibaba(label, options);
     case "whatsapp":
-      return fetchWhatsAppInbox();
-    case "instagram":
+      return fetchWhatsAppInbox(label);
     case "telegram":
-      throw new Error(`아직 '${channel}' 커넥터(리더)가 없습니다. 현재 가능: alibaba, whatsapp.`);
+      throw new Error("아직 'telegram' 커넥터(리더)가 없습니다. 다음 단계에서 추가합니다.");
     default:
       throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp.`);
   }

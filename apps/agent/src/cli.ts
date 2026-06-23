@@ -1,26 +1,95 @@
 #!/usr/bin/env node
 
 // QualiFlow 로컬 에이전트 — 코어 CLI(설치형 GUI는 이후 단계에서 이 코어를 감싼다).
-//   pair <코드>  웹에서 발급한 페어링 코드로 연결(토큰을 키체인에 저장)
-//   status       연결 상태(키체인에 토큰이 있는지)
-//   read         채널 읽기(샘플 fixture) → 기존 어댑터로 정규화 → 요약 출력
+//   accounts                            등록된 계정 목록
+//   add <channel> <label>               계정 추가(로그인/QR) — 계정별 세션
+//   remove <channel> <label>            계정 삭제(세션·데이터 포함)
+//   fetch <channel> [label] [--cached]  그 계정 인박스 → 정규화 요약
+//   pair <코드> | status                (보안 레이어 — 나중)
 
-import { fetchChannel } from "./fetch";
+import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, sessionPath } from "./accounts";
+import { fetchChannel, fetchWhatsAppInbox, loginAlibaba } from "./fetch";
 import { pair } from "./pair";
-import { readSampleInbox } from "./read";
 import { loadToken } from "./token-store";
 
 async function main() {
-  const [command, arg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const command = args[0];
 
   switch (command) {
-    case "pair": {
-      if (!arg) {
-        console.error("사용법: pnpm --filter @qualiflow/agent pair <코드>");
+    case "accounts": {
+      const accounts = await listAccounts();
+      if (!accounts.length) {
+        console.log("등록된 계정이 없습니다. 'add <channel> <label>'로 추가하세요.");
+        return;
+      }
+      console.log("등록된 계정:");
+      for (const account of accounts) {
+        console.log(`  - ${account.channel} / ${account.label}  (추가 ${account.addedAt.slice(0, 10)})`);
+      }
+      return;
+    }
+
+    case "add": {
+      const channel = args[1];
+      const label = args[2];
+      if (!channel || !label) {
+        console.error("사용법: add <channel: alibaba|whatsapp|telegram> <label>");
         process.exitCode = 1;
         return;
       }
-      const { agentId, workspaceId } = await pair(arg);
+      const account = await addAccount(channel, label);
+      console.log(`✅ 계정 등록: ${account.channel} / ${account.label}`);
+      if (channel === "alibaba") {
+        console.log("이 계정 전용 프로필로 로그인 창을 엽니다...");
+        await loginAlibaba(sessionPath("alibaba", account.label));
+      } else if (channel === "whatsapp") {
+        console.log("이 계정 전용으로 WhatsApp QR을 띄웁니다...");
+        await fetchWhatsAppInbox(account.label);
+      } else {
+        console.log(`'${channel}' 커넥터는 다음 단계입니다 — 등록만 완료(로그인은 추후).`);
+      }
+      return;
+    }
+
+    case "remove": {
+      const channel = args[1];
+      const label = args[2];
+      if (!channel || !label) {
+        console.error("사용법: remove <channel> <label>");
+        process.exitCode = 1;
+        return;
+      }
+      await removeAccount(channel, label);
+      console.log(`🗑  계정 삭제(세션·데이터 포함): ${channel} / ${sanitizeLabel(label)}`);
+      return;
+    }
+
+    case "fetch": {
+      // fetch <channel> [label] [--cached]. label 생략 시 그 채널 계정이 1개면 그것, 여러 개면 라벨 요구.
+      const channel = args[1] && !args[1].startsWith("--") ? args[1] : "alibaba";
+      const rawLabel = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+      const cached = args.includes("--cached");
+      const label = await resolveLabel(channel, rawLabel);
+      const summary = await fetchChannel(channel, label, { cached });
+      console.log(`✅ ${summary.channel}/${summary.label} 인박스 → 정규화 완료`);
+      console.log(
+        `   대화 ${summary.conversationCount} · 리드 ${summary.leadCount} · 스레드 ${summary.threadCount} · 메시지 ${summary.messageCount}`
+      );
+      for (const item of summary.sample) {
+        console.log(`   - ${item.lead}: "${item.lastText}"`);
+      }
+      return;
+    }
+
+    case "pair": {
+      const code = args[1];
+      if (!code) {
+        console.error("사용법: pair <코드>");
+        process.exitCode = 1;
+        return;
+      }
+      const { agentId, workspaceId } = await pair(code);
       console.log("✅ 페어링 완료 — 에이전트 토큰을 OS 키체인에 저장했습니다.");
       console.log(`   agentId=${agentId}`);
       console.log(`   workspaceId=${workspaceId}`);
@@ -37,33 +106,17 @@ async function main() {
       return;
     }
 
-    case "fetch": {
-      // fetch [채널] [--cached]. 채널 생략 시 alibaba. --cached는 alibaba 전용(RE 미실행).
-      const channel = arg && !arg.startsWith("--") ? arg : "alibaba";
-      const cached = process.argv.includes("--cached");
-      const summary = await fetchChannel(channel, { cached });
-      console.log(`✅ ${summary.channel} 인박스 → 정규화 완료`);
-      console.log(
-        `   대화 ${summary.conversationCount} · 리드 ${summary.leadCount} · 스레드 ${summary.threadCount} · 메시지 ${summary.messageCount}`
-      );
-      for (const item of summary.sample) {
-        console.log(`   - ${item.lead}: "${item.lastText}"`);
-      }
-      return;
-    }
-
-    case "read": {
-      const summary = await readSampleInbox();
-      console.log("📥 채널 읽기(샘플 fixture) → 정규화 완료");
-      console.log(`   리드 ${summary.leadCount} · 스레드 ${summary.threadCount} · 메시지 ${summary.messageCount}`);
-      for (const item of summary.sample) {
-        console.log(`   - [${item.thread}] ${item.lead}: "${item.lastText}" (${item.direction})`);
-      }
-      return;
-    }
-
     default:
-      console.log("QualiFlow agent — 명령: fetch [alibaba|whatsapp] [--cached] | pair <코드> | status | read");
+      console.log(
+        [
+          "QualiFlow agent — 명령:",
+          "  accounts                            등록된 계정 목록",
+          "  add <channel> <label>               계정 추가(로그인/QR)",
+          "  remove <channel> <label>            계정 삭제(세션·데이터)",
+          "  fetch <channel> [label] [--cached]  인박스 긁기 → 정규화",
+          "  pair <코드> | status                (보안 레이어 — 나중)"
+        ].join("\n")
+      );
   }
 }
 

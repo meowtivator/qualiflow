@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -51,6 +51,36 @@ async function readJsonArray<TItem>(fileName: string): Promise<TItem[] | null> {
   }
 }
 
+// 한 채널의 모든 계정 파일을 합쳐서 읽는다(다계정 → 한 인박스):
+//   <channel>-conversations.json           (default 계정, 하위호환)
+//   <channel>-conversations--<label>.json  (그 외 계정)
+async function readAllConversations<TItem>(channel: string): Promise<TItem[] | null> {
+  let files: string[];
+  try {
+    files = await readdir(DATA_DIR);
+  } catch {
+    return null;
+  }
+
+  const matching = files
+    .filter((file) => file === `${channel}-conversations.json` || file.startsWith(`${channel}-conversations--`))
+    .filter((file) => file.endsWith(".json"))
+    .sort();
+
+  const all: TItem[] = [];
+  for (const file of matching) {
+    try {
+      const parsed = JSON.parse(await readFile(resolve(DATA_DIR, file), "utf8")) as unknown;
+      if (Array.isArray(parsed)) {
+        all.push(...(parsed as TItem[]));
+      }
+    } catch {
+      // 깨진 파일은 건너뛴다.
+    }
+  }
+  return all.length > 0 ? all : null;
+}
+
 function resolveChannel(channelId: string): Channel {
   return channelId in BUILT_IN_CHANNELS ? BUILT_IN_CHANNELS[channelId as BuiltInChannelId] : BUILT_IN_CHANNELS.manual;
 }
@@ -84,7 +114,7 @@ export async function loadConversationSource(): Promise<ConversationSource> {
   const adapters: ConversationAdapter[] = [];
   const loadedChannels: BuiltInChannelId[] = [];
 
-  const alibaba = await readJsonArray<AlibabaRawConversation>("alibaba-conversations.json");
+  const alibaba = await readAllConversations<AlibabaRawConversation>("alibaba");
   if (alibaba) {
     adapters.push(createAlibabaAdapterFromConversations(alibaba));
     loadedChannels.push("alibaba");
@@ -95,7 +125,7 @@ export async function loadConversationSource(): Promise<ConversationSource> {
     adapters.push(createTelegramAdapterFromUserDialogs(telegramDialogs));
     loadedChannels.push("telegram");
   } else {
-    const telegramConversations = await readJsonArray<ChatRawConversation>("telegram-conversations.json");
+    const telegramConversations = await readAllConversations<ChatRawConversation>("telegram");
     if (telegramConversations) {
       adapters.push(createChatAdapter("telegram", telegramConversations, { authMode: "phone_code" }));
       loadedChannels.push("telegram");
@@ -103,7 +133,7 @@ export async function loadConversationSource(): Promise<ConversationSource> {
   }
 
   for (const channelId of CHAT_CHANNELS) {
-    const conversations = await readJsonArray<ChatRawConversation>(`${channelId}-conversations.json`);
+    const conversations = await readAllConversations<ChatRawConversation>(channelId);
     if (conversations) {
       adapters.push(createChatAdapter(channelId, conversations));
       loadedChannels.push(channelId);

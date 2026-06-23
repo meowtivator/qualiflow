@@ -18,8 +18,9 @@ import { chromium } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
 
-const PROFILE_DIR = resolve("../../.auth/alibaba-chrome-profile");
-const OUTPUT_PATH = resolve("../../apps/web/.data/alibaba-conversations.json");
+// 계정별 프로필/출력(에이전트가 QUALIFLOW_ALIBABA_PROFILE / QUALIFLOW_ALIBABA_OUTPUT로 지정). 없으면 기본(하위호환).
+const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
+const OUTPUT_PATH = process.env.QUALIFLOW_ALIBABA_OUTPUT || resolve("../../apps/web/.data/alibaba-conversations.json");
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
 const MAX_CONVERSATIONS = 30;

@@ -23,8 +23,8 @@ import qrcode from "qrcode-terminal";
 const here = dirname(fileURLToPath(import.meta.url));
 // src/connectors/ → 네 단계 위가 레포 루트
 const REPO_ROOT = resolve(here, "../../../..");
-const AUTH_DIR = resolve(REPO_ROOT, ".auth/whatsapp-baileys");
-const OUTPUT_FILE = resolve(REPO_ROOT, "apps/web/.data/whatsapp-conversations.json");
+const DEFAULT_AUTH_DIR = resolve(REPO_ROOT, ".auth/whatsapp-baileys");
+const DEFAULT_OUTPUT_FILE = resolve(REPO_ROOT, "apps/web/.data/whatsapp-conversations.json");
 
 // 연결 후 초기 히스토리 동기화를 기다리는 시간(기본 25초). 환경변수로 조정.
 const SYNC_WAIT_MS = Number(process.env.QUALIFLOW_WA_SYNC_MS) || 25_000;
@@ -47,9 +47,13 @@ function displayName(jid: string, contacts: Map<string, Contact>, chats: Map<str
   return contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? jid.split("@")[0];
 }
 
-export async function fetchWhatsApp(): Promise<ChatRawConversation[]> {
-  await mkdir(AUTH_DIR, { recursive: true });
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+export async function fetchWhatsApp(
+  options: { authDir?: string; outputFile?: string } = {}
+): Promise<ChatRawConversation[]> {
+  const authDir = options.authDir ?? DEFAULT_AUTH_DIR;
+  const outputFile = options.outputFile ?? DEFAULT_OUTPUT_FILE;
+  await mkdir(authDir, { recursive: true });
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
   const sock = makeWASocket({ auth: state });
   sock.ev.on("creds.update", saveCreds);
@@ -103,8 +107,8 @@ export async function fetchWhatsApp(): Promise<ChatRawConversation[]> {
         });
       }
 
-      await mkdir(dirname(OUTPUT_FILE), { recursive: true });
-      await writeFile(OUTPUT_FILE, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
+      await mkdir(dirname(outputFile), { recursive: true });
+      await writeFile(outputFile, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
 
       try {
         sock.end(undefined);
