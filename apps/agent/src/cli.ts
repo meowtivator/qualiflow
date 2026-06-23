@@ -5,7 +5,7 @@
 //   status       연결 상태(키체인에 토큰이 있는지)
 //   read         채널 읽기(샘플 fixture) → 기존 어댑터로 정규화 → 요약 출력
 
-import { fetchAlibaba } from "./fetch";
+import { fetchChannel } from "./fetch";
 import { pair } from "./pair";
 import { readSampleInbox } from "./read";
 import { loadToken } from "./token-store";
@@ -38,10 +38,11 @@ async function main() {
     }
 
     case "fetch": {
-      // 실제 알리바바 커넥터 실행(라이브). --cached 면 이미 추출된 데이터만 읽어 정규화.
+      // fetch [채널] [--cached]. 채널 생략 시 alibaba. --cached는 alibaba 전용(RE 미실행).
+      const channel = arg && !arg.startsWith("--") ? arg : "alibaba";
       const cached = process.argv.includes("--cached");
-      const summary = await fetchAlibaba({ cached });
-      console.log("✅ 알리바바 인박스 → 정규화 완료");
+      const summary = await fetchChannel(channel, { cached });
+      console.log(`✅ ${summary.channel} 인박스 → 정규화 완료`);
       console.log(
         `   대화 ${summary.conversationCount} · 리드 ${summary.leadCount} · 스레드 ${summary.threadCount} · 메시지 ${summary.messageCount}`
       );
@@ -62,7 +63,7 @@ async function main() {
     }
 
     default:
-      console.log("QualiFlow agent — 명령: fetch [--cached] | pair <코드> | status | read");
+      console.log("QualiFlow agent — 명령: fetch [alibaba|whatsapp] [--cached] | pair <코드> | status | read");
   }
 }
 

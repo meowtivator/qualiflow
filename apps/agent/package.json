@@ -14,10 +14,14 @@
   },
   "dependencies": {
     "@qualiflow/adapter-alibaba": "workspace:*",
-    "@qualiflow/core": "workspace:*"
+    "@qualiflow/adapter-chat": "workspace:*",
+    "@qualiflow/core": "workspace:*",
+    "@whiskeysockets/baileys": "7.0.0-rc13",
+    "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "@types/node": "25.9.1",
+    "@types/qrcode-terminal": "^0.12.2",
     "tsx": "4.20.6",
     "typescript": "6.0.3"
   }
