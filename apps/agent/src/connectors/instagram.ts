@@ -68,7 +68,7 @@ type IgInbox = { viewer?: { pk?: number | string }; inbox?: { threads?: IgThread
 const INBOX_SCRIPT = `(async () => {
   try {
     var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
-    var res = await fetch("/api/v1/direct_v2/inbox/?visual_message_return_type=unseen&thread_message_limit=20&persistentBadging=true&limit=20", {
+    var res = await fetch("/api/v1/direct_v2/inbox/?visual_message_return_type=unseen&thread_message_limit=50&persistentBadging=true&limit=50", {
       headers: { "X-IG-App-ID": "${IG_APP_ID}", "X-CSRFToken": csrf },
       credentials: "include"
     });

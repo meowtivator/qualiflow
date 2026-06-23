@@ -261,9 +261,12 @@ export async function fetchWhatsApp(
       });
 
       sock.ev.on("messaging-history.set", ({ chats: chatList, contacts: contactList, messages, isLatest }) => {
-        console.log(
-          `📥 히스토리 동기화: 대화 ${chatList.length} · 연락처 ${contactList.length} · 메시지 ${messages.length} · 마지막=${isLatest ?? "?"}`
-        );
+        // 메타데이터만 든 빈 청크(대화 0·메시지 0)는 로그하지 않는다(노이즈).
+        if (chatList.length || contactList.length || messages.length) {
+          console.log(
+            `📥 히스토리 동기화: 대화 ${chatList.length} · 연락처 ${contactList.length} · 메시지 ${messages.length} · 마지막=${isLatest ?? "?"}`
+          );
+        }
         for (const chat of chatList) {
           if (chat.id) {
             chats.set(chat.id, chat);

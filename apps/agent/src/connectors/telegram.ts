@@ -12,6 +12,8 @@ import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-cha
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 
+const TELEGRAM_HISTORY_LIMIT = Number(process.env.QUALIFLOW_TG_HISTORY) || 100; // 대화당 최근 메시지 수
+
 function getApiCreds(): { apiId: number; apiHash: string } {
   const apiId = Number(process.env.TELEGRAM_API_ID);
   const apiHash = process.env.TELEGRAM_API_HASH ?? "";
@@ -86,7 +88,8 @@ export async function fetchTelegram(sessionDir: string): Promise<ChatRawConversa
         continue;
       }
 
-      const rawMessages = await client.getMessages(entity, { limit: 30 });
+      // 대화당 최근 메시지 깊이(전체 이력 페이지네이션은 추후 — 지금은 넉넉한 최근 창).
+      const rawMessages = await client.getMessages(entity, { limit: TELEGRAM_HISTORY_LIMIT });
       const messages: ChatRawMessage[] = [];
       for (const message of rawMessages) {
         const text = message.message ?? "";
