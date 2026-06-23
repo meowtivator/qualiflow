@@ -146,11 +146,16 @@ console.log("(Enter 누를 필요 없어요. 최대 5분 대기.)\n");
 const connected = await waitForOnetalk(LOGIN_TIMEOUT_MS);
 
 if (connected) {
+  // ★감지 직후 바로 닫으면 OneTalk 세션 쿠키/토큰이 프로필에 다 안 굳어, 추출 때 '로그인 페이지'로
+  //   튄다(세션 만료처럼 보임). 몇 초 기다려 세션을 안정화한 뒤, SIGTERM 후에도 디스크 flush 시간을 준다.
+  console.log("\n✅ 로그인 감지됨 — 세션을 프로필에 저장하는 중(약 10초, 닫지 마세요)...");
+  await new Promise((settle) => setTimeout(settle, 8000));
   await writeConnectionStatus("active", "Alibaba login helper detected the OneTalk inbox. Extractor will validate during sync.");
-  console.log(`\n✅ 로그인 감지됨 — 세션이 영구 프로필에 저장됐습니다: ${PROFILE_DIR}`);
-  console.log(`연결 상태도 기록했습니다: ${CONNECTION_STATUS_FILE}`);
-  console.log("이제 추출: pnpm --filter @qualiflow/adapter-alibaba run inquiry:extract");
   chrome.kill("SIGTERM");
+  await new Promise((flush) => setTimeout(flush, 2000));
+  console.log(`세션이 영구 프로필에 저장됐습니다: ${PROFILE_DIR}`);
+  console.log(`연결 상태도 기록했습니다: ${CONNECTION_STATUS_FILE}`);
+  console.log("이제 추출: pnpm --filter @qualiflow/agent exec tsx src/cli.ts fetch alibaba <라벨>");
   process.exit(0);
 }
 
