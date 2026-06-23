@@ -169,7 +169,10 @@ export async function fetchWhatsApp(
         }
       });
 
-      sock.ev.on("messaging-history.set", ({ chats: chatList, contacts: contactList, messages }) => {
+      sock.ev.on("messaging-history.set", ({ chats: chatList, contacts: contactList, messages, isLatest }) => {
+        console.log(
+          `📥 히스토리 동기화: 대화 ${chatList.length} · 연락처 ${contactList.length} · 메시지 ${messages.length} · 마지막=${isLatest ?? "?"}`
+        );
         for (const chat of chatList) {
           if (chat.id) {
             chats.set(chat.id, chat);
@@ -187,6 +190,9 @@ export async function fetchWhatsApp(
       });
 
       sock.ev.on("messages.upsert", ({ messages }) => {
+        if (messages.length) {
+          console.log(`📨 새 메시지 ${messages.length}건`);
+        }
         for (const message of messages) {
           collectMessage(message);
         }
