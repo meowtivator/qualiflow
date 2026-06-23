@@ -11,7 +11,7 @@ import { createAlibabaAdapterFromConversations, type AlibabaRawConversation } fr
 import { createChatAdapter, type ChatRawConversation } from "@qualiflow/adapter-chat";
 import type { ConversationAdapter } from "@qualiflow/core";
 
-import { dataFile, sessionPath } from "./accounts";
+import { dataFile, listAccounts, sessionPath } from "./accounts";
 import { fetchInstagram } from "./connectors/instagram";
 import { fetchTelegram } from "./connectors/telegram";
 import { fetchWhatsApp } from "./connectors/whatsapp";
@@ -34,6 +34,16 @@ export type FetchSummary = {
 async function writeChatData(file: string, conversations: ChatRawConversation[]): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
+}
+
+// --cached: 커넥터를 안 띄우고 저장된 데이터 파일을 그대로 읽는다(오프라인 재요약).
+async function readChatData(file: string): Promise<ChatRawConversation[]> {
+  try {
+    const parsed = JSON.parse(await readFile(file, "utf8")) as unknown;
+    return Array.isArray(parsed) ? (parsed as ChatRawConversation[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 // 정규화된 어댑터에서 리드/스레드/메시지 수 + 샘플을 뽑는다(채널 공통).
@@ -107,27 +117,64 @@ export async function fetchAlibaba(label: string, options: { cached: boolean }):
   return summarize("alibaba", label, raw.length, createAlibabaAdapterFromConversations(raw));
 }
 
-export async function fetchWhatsAppInbox(label: string): Promise<FetchSummary> {
-  console.log(`🔌 WhatsApp(${label}) 커넥터 실행 — Baileys로 WhatsApp Web에 연결합니다...`);
-  const conversations = await fetchWhatsApp({
-    authDir: sessionPath("whatsapp", label),
-    outputFile: dataFile("whatsapp", label)
-  });
+export async function fetchWhatsAppInbox(label: string, options: { cached: boolean } = { cached: false }): Promise<FetchSummary> {
+  const file = dataFile("whatsapp", label);
+  let conversations: ChatRawConversation[];
+  if (options.cached) {
+    console.log(`🗂  WhatsApp(${label}) --cached: 저장된 데이터를 읽습니다(연결 안 함).`);
+    conversations = await readChatData(file);
+  } else {
+    console.log(`🔌 WhatsApp(${label}) 커넥터 실행 — Baileys로 WhatsApp Web에 연결합니다...`);
+    conversations = await fetchWhatsApp({ authDir: sessionPath("whatsapp", label), outputFile: file });
+  }
   return summarize("whatsapp", label, conversations.length, createChatAdapter("whatsapp", conversations));
 }
 
-export async function fetchTelegramInbox(label: string): Promise<FetchSummary> {
-  console.log(`🔌 Telegram(${label}) 커넥터 실행 — gramjs로 내 계정 인박스를 읽습니다...`);
-  const conversations = await fetchTelegram(sessionPath("telegram", label));
-  await writeChatData(dataFile("telegram", label), conversations);
+export async function fetchTelegramInbox(label: string, options: { cached: boolean } = { cached: false }): Promise<FetchSummary> {
+  const file = dataFile("telegram", label);
+  let conversations: ChatRawConversation[];
+  if (options.cached) {
+    console.log(`🗂  Telegram(${label}) --cached: 저장된 데이터를 읽습니다(연결 안 함).`);
+    conversations = await readChatData(file);
+  } else {
+    console.log(`🔌 Telegram(${label}) 커넥터 실행 — gramjs로 내 계정 인박스를 읽습니다...`);
+    conversations = await fetchTelegram(sessionPath("telegram", label));
+    await writeChatData(file, conversations);
+  }
   return summarize("telegram", label, conversations.length, createChatAdapter("telegram", conversations));
 }
 
-export async function fetchInstagramInbox(label: string): Promise<FetchSummary> {
-  console.log(`🔌 Instagram(${label}) 커넥터 실행 — 웹 세션으로 DM API를 읽습니다...`);
-  const conversations = await fetchInstagram(sessionPath("instagram", label));
-  await writeChatData(dataFile("instagram", label), conversations);
+export async function fetchInstagramInbox(label: string, options: { cached: boolean } = { cached: false }): Promise<FetchSummary> {
+  const file = dataFile("instagram", label);
+  let conversations: ChatRawConversation[];
+  if (options.cached) {
+    console.log(`🗂  Instagram(${label}) --cached: 저장된 데이터를 읽습니다(연결 안 함).`);
+    conversations = await readChatData(file);
+  } else {
+    console.log(`🔌 Instagram(${label}) 커넥터 실행 — 웹 세션으로 DM API를 읽습니다...`);
+    conversations = await fetchInstagram(sessionPath("instagram", label));
+    await writeChatData(file, conversations);
+  }
   return summarize("instagram", label, conversations.length, createChatAdapter("instagram", conversations));
+}
+
+// 등록된 모든 계정을 한 번에 fetch한다(한 채널이 실패해도 나머지는 계속). "한꺼번에 확인" 용도.
+export async function fetchAllAccounts(options: { cached: boolean }): Promise<FetchSummary[]> {
+  const accounts = await listAccounts();
+  if (!accounts.length) {
+    console.log("등록된 계정이 없습니다. 'add <channel> <label>'로 추가하세요.");
+    return [];
+  }
+  const summaries: FetchSummary[] = [];
+  for (const account of accounts) {
+    console.log(`\n──── ${account.channel} / ${account.label} ────`);
+    try {
+      summaries.push(await fetchChannel(account.channel, account.label, options));
+    } catch (error) {
+      console.error(`  ⚠️ 실패: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return summaries;
 }
 
 export async function fetchChannel(channel: string, label: string, options: { cached: boolean }): Promise<FetchSummary> {
@@ -135,11 +182,11 @@ export async function fetchChannel(channel: string, label: string, options: { ca
     case "alibaba":
       return fetchAlibaba(label, options);
     case "whatsapp":
-      return fetchWhatsAppInbox(label);
+      return fetchWhatsAppInbox(label, options);
     case "telegram":
-      return fetchTelegramInbox(label);
+      return fetchTelegramInbox(label, options);
     case "instagram":
-      return fetchInstagramInbox(label);
+      return fetchInstagramInbox(label, options);
     default:
       throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram.`);
   }

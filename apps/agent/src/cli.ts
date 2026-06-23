@@ -11,7 +11,7 @@ import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, s
 import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
 import { loadLocalEnv } from "./env";
-import { fetchChannel, fetchWhatsAppInbox, loginAlibaba } from "./fetch";
+import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, loginAlibaba } from "./fetch";
 import { pair } from "./pair";
 import { loadToken } from "./token-store";
 
@@ -76,10 +76,28 @@ async function main() {
     }
 
     case "fetch": {
+      const cached = args.includes("--cached");
+
+      // fetch all — 등록된 모든 계정을 한 번에 긁고 합산 요약(한꺼번에 확인).
+      if (args[1] === "all") {
+        const summaries = await fetchAllAccounts({ cached });
+        console.log("\n══════ 전체 요약 ══════");
+        let totalConversations = 0;
+        let totalMessages = 0;
+        for (const summary of summaries) {
+          console.log(
+            `  ${summary.channel}/${summary.label}: 대화 ${summary.conversationCount} · 메시지 ${summary.messageCount}`
+          );
+          totalConversations += summary.conversationCount;
+          totalMessages += summary.messageCount;
+        }
+        console.log(`  ─ 합계: 계정 ${summaries.length} · 대화 ${totalConversations} · 메시지 ${totalMessages}`);
+        return;
+      }
+
       // fetch <channel> [label] [--cached]. label 생략 시 그 채널 계정이 1개면 그것, 여러 개면 라벨 요구.
       const channel = args[1] && !args[1].startsWith("--") ? args[1] : "alibaba";
       const rawLabel = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
-      const cached = args.includes("--cached");
       const label = await resolveLabel(channel, rawLabel);
       const summary = await fetchChannel(channel, label, { cached });
       console.log(`✅ ${summary.channel}/${summary.label} 인박스 → 정규화 완료`);
@@ -124,6 +142,7 @@ async function main() {
           "  add <channel> <label>               계정 추가(로그인/QR)",
           "  remove <channel> <label>            계정 삭제(세션·데이터)",
           "  fetch <channel> [label] [--cached]  인박스 긁기 → 정규화",
+          "  fetch all [--cached]                등록된 모든 계정 한 번에 → 합산 요약",
           "  pair <코드> | status                (보안 레이어 — 나중)"
         ].join("\n")
       );
