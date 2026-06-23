@@ -7,7 +7,7 @@
 //   - syncFullHistory + 히스토리가 잠잠해질 때까지(debounce) 기다렸다가 ChatRawConversation[]로
 //     정규화해 outputFile 에 쓴다.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -105,6 +105,17 @@ function displayName(jid: string, contacts: Map<string, Contact>, chats: Map<str
   return contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? jid.split("@")[0];
 }
 
+// 이미 저장된 대화를 읽는다(왓츠앱은 페어링 직후 1회만 히스토리를 주므로, 재연결 fetch가 0개일 때
+// 기존 데이터를 빈 결과로 덮어쓰지 않으려고 확인용으로 쓴다).
+async function readExistingConversations(file: string): Promise<ChatRawConversation[]> {
+  try {
+    const parsed = JSON.parse(await readFile(file, "utf8")) as unknown;
+    return Array.isArray(parsed) ? (parsed as ChatRawConversation[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchWhatsApp(
   options: { authDir?: string; outputFile?: string } = {}
 ): Promise<ChatRawConversation[]> {
@@ -173,6 +184,19 @@ export async function fetchWhatsApp(
           contact: { id: jid, name: displayName(jid, contacts, chats) },
           messages
         });
+      }
+
+      // 재연결 fetch는 히스토리를 다시 안 줘서 0개가 나온다 — 그때 기존 데이터를 덮어쓰지 않는다.
+      if (conversations.length === 0) {
+        const existing = await readExistingConversations(outputFile);
+        if (existing.length > 0) {
+          restoreConsole();
+          console.log(
+            `📦 새 히스토리 없음 — 기존 대화 ${existing.length}개 유지(왓츠앱은 페어링 직후 1회만 히스토리 동기화).`
+          );
+          resolveFetch(existing);
+          return;
+        }
       }
 
       await mkdir(dirname(outputFile), { recursive: true });
