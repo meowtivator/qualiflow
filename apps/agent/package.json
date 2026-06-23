@@ -7,10 +7,6 @@
   "scripts": {
     "agent": "tsx ./src/cli.ts",
     "accounts": "tsx ./src/cli.ts accounts",
-    "add": "tsx ./src/cli.ts add",
-    "remove": "tsx ./src/cli.ts remove",
-    "fetch": "tsx ./src/cli.ts fetch",
-    "pair": "tsx ./src/cli.ts pair",
     "status": "tsx ./src/cli.ts status",
     "typecheck": "tsc --noEmit"
   },
