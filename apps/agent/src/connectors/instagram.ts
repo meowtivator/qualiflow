@@ -181,3 +181,37 @@ export async function fetchInstagram(profileDir: string): Promise<ChatRawConvers
     return conversations;
   });
 }
+
+// 메시지 발송 — mautrix와 같은 내부 웹 API(broadcast)를 로그인된 페이지에서 POST한다.
+//   threadId = 불러온 대화의 threadId(=IG thread_id). client_context = 멱등키(중복 전송 방지).
+export async function sendInstagram(profileDir: string, threadId: string, text: string): Promise<void> {
+  const script = `(async () => {
+    try {
+      var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+      var ctx = String(Date.now()) + "_" + Math.floor(Math.random() * 1e9);
+      var body = new URLSearchParams();
+      body.set("action", "send_item");
+      body.set("thread_ids", "[" + ${JSON.stringify(threadId)} + "]");
+      body.set("client_context", ctx);
+      body.set("text", ${JSON.stringify(text)});
+      body.set("_csrftoken", csrf);
+      var res = await fetch("/api/v1/direct_v2/threads/broadcast/text/", {
+        method: "POST",
+        headers: { "X-IG-App-ID": "${IG_APP_ID}", "X-CSRFToken": csrf, "content-type": "application/x-www-form-urlencoded" },
+        credentials: "include",
+        body: body.toString()
+      });
+      if (res.ok) return "ok";
+      return "fail:" + res.status + ":" + (await res.text()).slice(0, 200);
+    } catch (e) { return "error:" + (e && e.message ? e.message : String(e)); }
+  })()`;
+
+  await withInstagramPage(profileDir, async (page) => {
+    await delay(2500); // 페이지/세션 로드 대기
+    const result = (await page.evaluate(script).catch((error) => `evaluate-error:${String(error)}`)) as string;
+    if (result !== "ok") {
+      throw new Error(`Instagram 발송 실패: ${result}`);
+    }
+    console.log(`📤 Instagram 발송 완료 → thread ${threadId}`);
+  });
+}

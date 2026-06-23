@@ -120,3 +120,37 @@ export async function fetchTelegram(sessionDir: string): Promise<ChatRawConversa
     await client.disconnect();
   }
 }
+
+// 발송 대상 해석: "me"=Saved Messages, @사용자명=그대로, 숫자=불러온 대화 id를 dialogs에서 찾아 엔티티 확보.
+async function resolveTelegramTarget(client: TelegramClient, recipient: string): Promise<unknown> {
+  if (recipient === "me") {
+    return "me";
+  }
+  if (/^@?[A-Za-z]/.test(recipient)) {
+    return recipient; // 사용자명/링크는 gramjs가 직접 해석
+  }
+  // 숫자 id(불러온 threadId): 엔티티 해시가 세션에 있어야 보내지므로 dialogs로 캐시를 채운 뒤 찾는다.
+  const dialogs = await client.getDialogs({ limit: 100 });
+  const match = dialogs.find((dialog) => String(dialog.id) === recipient);
+  if (!match?.entity) {
+    throw new Error(`Telegram 대상 '${recipient}'을 못 찾았습니다(불러온 대화의 threadId나 @사용자명을 쓰세요).`);
+  }
+  return match.entity;
+}
+
+// 메시지 발송. 저장된 세션으로 연결해 한 건 보내고 끊는다.
+export async function sendTelegram(sessionDir: string, recipient: string, text: string): Promise<void> {
+  const { apiId, apiHash } = getApiCreds();
+  const session = await loadSession(sessionDir);
+  if (!session) {
+    throw new Error("Telegram 세션이 없습니다. 먼저 'add telegram <라벨>'로 로그인하세요.");
+  }
+  const client = new TelegramClient(new StringSession(session), apiId, apiHash, { connectionRetries: 5 });
+  await client.connect();
+  try {
+    const target = await resolveTelegramTarget(client, recipient);
+    await client.sendMessage(target as never, { message: text });
+  } finally {
+    await client.disconnect();
+  }
+}

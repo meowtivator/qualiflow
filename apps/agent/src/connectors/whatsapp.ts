@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
 import makeWASocket, {
   DisconnectReason,
+  jidNormalizedUser,
   useMultiFileAuthState,
   type Chat,
   type Contact,
@@ -295,5 +296,71 @@ export async function fetchWhatsApp(
 
     connect();
     hardTimer = setTimeout(() => void finish(), HARD_TIMEOUT_MS); // 안전 상한
+  });
+}
+
+// 메시지 발송. 저장된 세션으로 연결 → connection:open에서 한 건 보내고 소켓 종료.
+//   to = "me"(내 번호, 나에게 테스트) | 불러온 대화의 threadId(=상대 jid, 예: 1234@s.whatsapp.net)
+export async function sendWhatsApp(options: { authDir?: string; to: string; text: string }): Promise<void> {
+  const authDir = options.authDir ?? DEFAULT_AUTH_DIR;
+  muteLibsignalNoise();
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+
+  await new Promise<void>((resolveSend, rejectSend) => {
+    let settled = false;
+    const done = (error?: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      restoreConsole();
+      if (error) {
+        rejectSend(error);
+      } else {
+        resolveSend();
+      }
+    };
+
+    const sock = makeWASocket({ auth: state, ...(WA_DEBUG ? {} : { logger: silentLogger }) });
+    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("connection.update", (update) => {
+      const { connection, lastDisconnect } = update;
+
+      if (connection === "open") {
+        const myId = sock.user?.id;
+        const jid = options.to === "me" ? (myId ? jidNormalizedUser(myId) : "") : options.to;
+        if (!jid) {
+          sock.end(undefined);
+          done(new Error("WhatsApp 발송 대상(jid)을 확인하지 못했습니다."));
+          return;
+        }
+        sock
+          .sendMessage(jid, { text: options.text })
+          .then(() => {
+            console.log(`📤 WhatsApp 발송 완료 → ${jid}`);
+            sock.end(undefined);
+            done();
+          })
+          .catch((error: unknown) => {
+            sock.end(undefined);
+            done(error instanceof Error ? error : new Error(String(error)));
+          });
+        return;
+      }
+
+      if (connection === "close" && !settled) {
+        const statusCode =
+          typeof lastDisconnect?.error === "object" && lastDisconnect?.error !== null
+            ? (lastDisconnect.error as { output?: { statusCode?: number } }).output?.statusCode
+            : undefined;
+        done(
+          statusCode === DisconnectReason.loggedOut
+            ? new Error("WhatsApp 로그아웃됨 — 다시 'add whatsapp <라벨>'로 QR 스캔하세요.")
+            : new Error("WhatsApp 연결이 끊겼습니다(다시 시도하세요).")
+        );
+      }
+    });
+
+    setTimeout(() => done(new Error("WhatsApp 발송 타임아웃(연결 실패).")), 60_000);
   });
 }
