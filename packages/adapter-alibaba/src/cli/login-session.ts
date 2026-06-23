@@ -25,6 +25,9 @@ import { chromium } from "playwright-core";
 
 // 계정별 프로필 경로(에이전트가 QUALIFLOW_ALIBABA_PROFILE로 계정별로 지정). 없으면 기본(하위호환).
 const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
+// ★세션 쿠키 백업 파일. 크롬을 죽이면 메모리에만 있던 세션 쿠키가 프로필에 안 남으므로, 로그인 직후
+//   CDP로 살아있는 쿠키를 읽어 여기 저장하고 extract가 다시 주입한다(★서버로 안 감, 프로필 옆 로컬).
+const COOKIES_FILE = `${PROFILE_DIR}.cookies.json`;
 const CONNECTION_STATUS_FILE = resolve("../../apps/web/.data/alibaba-connection.json");
 // 로그인 페이지가 아니라 onetalk을 직접 연다. 로그인 안 됐으면 알리바바가 로그인으로 보냈다가
 // 로그인 성공 시 다시 onetalk으로 돌려보낸다(= 로그인 시작점이 onetalk이라 복귀 대상이 생긴다).
@@ -107,6 +110,21 @@ async function waitForLogin(timeoutMs: number): Promise<boolean> {
   }
 }
 
+// ★로그인된 크롬에서 살아있는 쿠키 전부를 CDP로 읽어 파일에 저장한다(세션 쿠키 포함 — 이게 핵심).
+//   크롬 프로필만 믿으면 SIGTERM 시 세션 쿠키가 디스크에 안 굳어 사라지므로, 명시적으로 백업한다.
+async function saveSessionCookies(file: string): Promise<number> {
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
+  try {
+    const context = browser.contexts()[0];
+    const cookies = await context.cookies(); // 인자 없으면 컨텍스트의 모든 도메인 쿠키(httpOnly 포함)
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, `${JSON.stringify(cookies, null, 2)}\n`, "utf8");
+    return cookies.length;
+  } finally {
+    await browser.close().catch(() => undefined); // 연결만 해제(크롬 안 죽임)
+  }
+}
+
 async function writeConnectionStatus(status: "active" | "needs_relogin", detail: string): Promise<void> {
   const checkedAt = new Date().toISOString();
   await mkdir(dirname(CONNECTION_STATUS_FILE), { recursive: true });
@@ -175,6 +193,13 @@ if (connected) {
   //   튄다(세션 만료처럼 보임). 몇 초 기다려 세션을 안정화한 뒤, SIGTERM 후에도 디스크 flush 시간을 준다.
   console.log("\n✅ 로그인 감지됨 — 세션을 프로필에 저장하는 중(약 10초, 닫지 마세요)...");
   await new Promise((settle) => setTimeout(settle, 8000));
+  // ★프로필 flush에만 의존하지 않고, 살아있는 쿠키를 CDP로 읽어 백업한다(세션 쿠키 보존).
+  try {
+    const cookieCount = await saveSessionCookies(COOKIES_FILE);
+    console.log(`세션 쿠키 ${cookieCount}개를 백업했습니다(추출 때 재주입).`);
+  } catch (error) {
+    console.error(`쿠키 백업 실패(프로필 쿠키로 폴백): ${error instanceof Error ? error.message : String(error)}`);
+  }
   await writeConnectionStatus("active", "Alibaba login helper detected the OneTalk inbox. Extractor will validate during sync.");
   chrome.kill("SIGTERM");
   await new Promise((flush) => setTimeout(flush, 2000));

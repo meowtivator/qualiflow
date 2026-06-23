@@ -11,15 +11,17 @@
 //   실행: pnpm --filter @qualiflow/adapter-alibaba run inquiry:extract
 
 import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { chromium, type Page } from "playwright-core";
+import { chromium, type BrowserContext, type Page } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
 
 // 계정별 프로필/출력(에이전트가 QUALIFLOW_ALIBABA_PROFILE / QUALIFLOW_ALIBABA_OUTPUT로 지정). 없으면 기본(하위호환).
 const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
+// login이 백업한 세션 쿠키(프로필만으론 세션 쿠키가 안 남아서). 있으면 goto 전에 주입한다.
+const COOKIES_FILE = `${PROFILE_DIR}.cookies.json`;
 const OUTPUT_PATH = process.env.QUALIFLOW_ALIBABA_OUTPUT || resolve("../../apps/web/.data/alibaba-conversations.json");
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
@@ -89,6 +91,20 @@ async function waitForInbox(page: Page): Promise<"ready" | "login" | "timeout"> 
     await page.waitForTimeout(INBOX_POLL_MS);
   }
   return "timeout";
+}
+
+// login이 백업한 세션 쿠키를 컨텍스트에 주입한다(goto 전). 파일 없으면 프로필 쿠키에 의존(폴백).
+async function injectSessionCookies(context: BrowserContext, file: string): Promise<number> {
+  try {
+    const cookies = JSON.parse(await readFile(file, "utf8")) as Parameters<BrowserContext["addCookies"]>[0];
+    if (Array.isArray(cookies) && cookies.length) {
+      await context.addCookies(cookies);
+      return cookies.length;
+    }
+  } catch {
+    // 파일 없거나 깨짐 → 프로필 쿠키로 폴백
+  }
+  return 0;
 }
 
 // 페이지 안에서 실행되는 추출 스크립트: React fiber 트리를 훑어 itemData(메시지)를 모은다.
@@ -297,6 +313,12 @@ async function main() {
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
   const context = browser.contexts()[0];
   const page = context.pages()[0] ?? (await context.newPage());
+
+  // ★goto 전에 login이 백업한 세션 쿠키를 주입한다(프로필만으론 세션 쿠키가 사라져 로그인 페이지로 튐).
+  const injected = await injectSessionCookies(context, COOKIES_FILE);
+  if (injected) {
+    console.log(`백업 세션 쿠키 ${injected}개 주입(프로필 + 쿠키 이중 보강).`);
+  }
 
   await page.goto(ONETALK_URL, { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => undefined);
 
