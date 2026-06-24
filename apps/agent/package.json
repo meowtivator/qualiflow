@@ -8,6 +8,7 @@
     "agent": "tsx ./src/cli.ts",
     "accounts": "tsx ./src/cli.ts accounts",
     "status": "tsx ./src/cli.ts status",
+    "bundle": "node build.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/node": "25.9.1",
     "@types/qrcode-terminal": "^0.12.2",
+    "esbuild": "^0.28.1",
     "tsx": "4.20.6",
     "typescript": "6.0.3"
   }

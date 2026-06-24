@@ -23,11 +23,29 @@ launchd plist의 `QUALIFLOW_SYNC_INTERVAL_MS`(ms, 기본 30분)로 조정.
 > ⚠️ 전제: 채널들은 미리 `add <channel> <label>`로 로그인돼 있어야 합니다(로그인 창은 사람이 직접).
 > 데몬은 이미 로그인된 세션으로 동기화만 합니다.
 
+## 단일 번들 (esbuild) — 됨
+
+에이전트 + 워크스페이스 패키지(@qualiflow/*) + telegram을 한 파일로 묶는다. pnpm·워크스페이스
+해석 없이 `node`로 바로 돈다.
+
+```bash
+pnpm --filter @qualiflow/agent bundle      # → apps/agent/dist/agent.mjs (~130kb)
+node apps/agent/dist/agent.mjs accounts    # 번들로 실행
+node apps/agent/dist/agent.mjs fetch all   # 등
+```
+
+⚠️ **현재 한계(배포 전 처리 대상)**:
+- `playwright-core`·`@whiskeysockets/baileys`는 네이티브·동적 require가 많아 **external**(번들에 안 들어감)
+  → 지금은 레포 `node_modules`에서 require. 배포본은 *이 둘 + 의존성만* 담은 작은 node_modules를 동봉하거나,
+  Node SEA로 묶으면서 네이티브를 옆에 둬야 한다.
+- `.auth` / `.data` / `.env.local` 경로가 **번들 위치(레포 구조) 기준**으로 잡힌다(`import.meta.url`).
+  실제 설치본에선 *홈 디렉터리/설정 경로* 기준으로 바꿔야 한다.
+- Node 런타임은 여전히 필요(`.mjs` 실행). 완전 무-Node 단일 바이너리는 Node SEA 단계.
+
 ## 다음 단계 (로드맵)
 
-1. **단일 실행본 번들** — 에이전트를 Node 런타임까지 포함한 하나의 실행파일로(크롬은 *사용자 것*을
-   쓰므로 크로미움 번들 불필요). 후보: Node SEA / Electron(트레이 아이콘 + 로그인 창 호스팅까지 필요하면).
-   UI는 클라우드에 있으니 헤드리스 데몬이면 충분 → 가벼운 쪽 우선 검토.
+1. **Node SEA로 진짜 단일 바이너리** — 위 번들을 Node 실행파일에 임베드 + 네이티브(baileys/playwright)
+   동봉. 경로도 설치 위치 기준으로. (헤드리스 데몬이라 Electron 불필요.)
 2. **크로스플랫폼 설치본(서명 우회)** — macOS `.dmg/.app`, Windows `.exe/.msi`. **코드 서명 없이** 배포하고,
    첫 실행 시 OS 보안경고를 우회하는 안내를 동봉:
    - macOS: 우클릭 → "열기"(Gatekeeper 우회), 또는 `xattr -dr com.apple.quarantine <앱>`.
