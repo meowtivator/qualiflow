@@ -24,6 +24,7 @@ const MAX_CONVERSATIONS = 30;
 const OPEN_TIMEOUT_MS = 10_000; // 한 대화를 열고 그 대화 메시지가 fiber에 뜰 때까지 최대 대기
 const POLL_MS = 400; // 폴링 간격
 const MAX_SCROLLS = 60; // 한 대화에서 위로 스크롤하며 옛 메시지를 끌어올 최대 횟수(폭주 방지 상한)
+const MAX_LIST_SCROLLS = 40; // 연락처 목록을 아래로 스크롤하며 더 많은 바이어를 불러올 최대 횟수(폭주 방지 상한)
 const SCROLL_WAIT_MS = 800; // 한 번 스크롤한 뒤 옛 메시지가 그려지거나(가상 리스트) 불러와질(지연 로딩) 때까지 대기
 
 const INBOX_READY_TIMEOUT_MS = 40_000; // 대화 목록이 뜰 때까지 최대 대기
@@ -188,8 +189,28 @@ const SCROLL_UP_IN_PAGE = String.raw`
 
 // ⚠️ 위 둘은 "() => {...}" 문자열. Playwright는 문자열을 표현식으로만 평가하고 함수를 호출하지
 //    않으므로 (…)() 로 감싸 "호출되게" 한다(안 그러면 함수값→undefined→0).
+// 연락처(대화) 목록 패널을 '아래로' 한 화면씩 스크롤한다. 가상 리스트라 더 내려야 다음 바이어 행이 그려진다.
+// .contact-item-container 의 스크롤 가능한 조상(목록 패널)을 찾아 내리고, 맨 아래 도달 여부를 알린다.
+const SCROLL_LIST_DOWN_IN_PAGE = String.raw`
+() => {
+  const rows = Array.from(document.querySelectorAll(".contact-item-container"));
+  if (!rows.length) return { found: false, atBottom: true };
+  let c = rows[0];
+  while (c && c !== document.body) {
+    const s = getComputedStyle(c);
+    if ((s.overflowY === "auto" || s.overflowY === "scroll") && c.scrollHeight > c.clientHeight + 10) break;
+    c = c.parentElement;
+  }
+  if (!c || c === document.body) return { found: false, atBottom: true };
+  const before = c.scrollTop;
+  c.scrollTop = Math.min(c.scrollHeight, before + Math.floor(c.clientHeight * 0.8));
+  return { found: true, atBottom: c.scrollTop + c.clientHeight >= c.scrollHeight - 5 };
+}
+`;
+
 const EXTRACT_CALL = `(${EXTRACT_IN_PAGE})()`;
 const SCROLL_CALL = `(${SCROLL_UP_IN_PAGE})()`;
+const SCROLL_LIST_DOWN_CALL = `(${SCROLL_LIST_DOWN_IN_PAGE})()`;
 
 function buildReadRowProfileImageScript(cid: string | null, index: number) {
   const serialized = JSON.stringify({ cid, index });
@@ -297,12 +318,9 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     .evaluate(`document.querySelectorAll(".im-next-overlay-wrapper").forEach((el) => el.remove())`)
     .catch(() => undefined);
 
-  // 대화 목록 행 (정찰로 확인: div.contact-item-container, data-cid=conversationCode)
-  const rows = page.locator(".contact-item-container");
-  const rowCount = Math.min(await rows.count().catch(() => 0), MAX_CONVERSATIONS);
-
   const conversations: AlibabaRawConversation[] = [];
-  const seenCodes = new Set<string>();
+  const seenCodes = new Set<string>(); // 이미 push한 conversationCode
+  const seenCids = new Set<string>(); // 이미 열어본 연락처 행(data-cid) — 재시도 방지
 
   // 한 대화를 연 뒤, 그 대화(cid)의 메시지가 fiber에 나타날 때까지 폴링한다(WebSocket 로딩 대기).
   // cid가 일치하면 "확실히 이 대화" → 채택. 일치 못 해도 패널이 안정되면(같은 code 2회 연속) 채택.
@@ -323,27 +341,28 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     return stable;
   }
 
-  console.log(`대화 목록 행 ${rowCount}개 발견. 하나씩 열고, 위로 스크롤하며 전체 이력 추출...`);
-  for (let index = 0; index < rowCount; index += 1) {
-    const row = rows.nth(index);
-    const cid = await row.getAttribute("data-cid").catch(() => null);
-    const dataName = await row.getAttribute("data-name").catch(() => null);
-    const dataAliId = await row.getAttribute("data-ali-id").catch(() => null);
-    const profileImageUrl = (await page.evaluate(buildReadRowProfileImageScript(cid, index)).catch(() => undefined)) as
+  // 한 대화(cid)를 열어 메시지 전체 이력을 긁어 conversations에 push. 새로 담았으면 true.
+  // (메시지를 위로 스크롤하며 누적하는 로직은 종전과 동일 — 바뀐 건 '바깥에서 어떤 행을 여느냐'뿐.)
+  async function extractOne(cid: string, dataName: string | null, dataAliId: string | null): Promise<boolean> {
+    const rowLoc = page.locator(`.contact-item-container[data-cid="${cid}"]`).first();
+    if ((await rowLoc.count().catch(() => 0)) === 0) {
+      return false; // 아직 DOM에 없음(스크롤로 사라짐) — 마크 안 하고 다음 라운드에 다시 만난다.
+    }
+    seenCids.add(cid); // 행이 있어 처리 시도 → 마크(빈 대화여도 같은 행 무한 재시도 방지).
+
+    const profileImageUrl = (await page.evaluate(buildReadRowProfileImageScript(cid, 0)).catch(() => undefined)) as
       | string
       | undefined;
 
-    await row.click({ timeout: 5000 }).catch(() => undefined);
+    await rowLoc.click({ timeout: 5000 }).catch(() => undefined);
     const first = await waitForConversation(cid);
     if (!first || !first.messages.length) {
-      console.log(`  [${index + 1}/${rowCount}] 건너뜀(메시지 못 뜸)`);
-      continue;
+      return false; // 메시지 못 뜸(빈/로딩 실패)
     }
 
     const code = first.messages[0]?.conversationCode || cid || "";
     if (!code || seenCodes.has(code)) {
-      console.log(`  [${index + 1}/${rowCount}] 건너뜀(중복/무효 코드)`);
-      continue;
+      return false; // 중복/무효 코드
     }
     seenCodes.add(code);
 
@@ -384,7 +403,42 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
       messages
     });
     const capped = scrolls >= MAX_SCROLLS ? " ⚠️상한도달(더 있을 수 있음)" : "";
-    console.log(`  [${index + 1}/${rowCount}] ${messages.length}개 메시지 (스크롤 ${scrolls}회)${capped}`);
+    console.log(`  [${conversations.length}] ${cid}: ${messages.length}개 메시지 (스크롤 ${scrolls}회)${capped}`);
+    return true;
+  }
+
+  // ★연락처 목록은 가상스크롤이라 '보이는 행'만 DOM에 있다. 목록을 한 화면씩 내리며 그때그때
+  //   새로 나타난 행(data-cid)을 열어 추출한다. 더 내려도 새 행이 안 나오면(또는 맨 아래) 종료.
+  //   (예전엔 처음 보이는 행만 읽어 목록 아래쪽 바이어를 통째로 놓쳤다.)
+  console.log(`연락처 목록을 스크롤하며 대화를 추출합니다(상한 ${MAX_CONVERSATIONS})...`);
+  let listScrolls = 0;
+  let emptyStreak = 0; // 스크롤했는데 새로 연 대화가 없던 연속 횟수
+  while (conversations.length < MAX_CONVERSATIONS && listScrolls <= MAX_LIST_SCROLLS) {
+    const visible = (await page
+      .$$eval(".contact-item-container", (els) =>
+        els.map((e) => ({
+          cid: e.getAttribute("data-cid"),
+          name: e.getAttribute("data-name"),
+          aliId: e.getAttribute("data-ali-id")
+        }))
+      )
+      .catch(() => [])) as Array<{ cid: string | null; name: string | null; aliId: string | null }>;
+
+    let openedThisRound = 0;
+    for (const item of visible) {
+      if (conversations.length >= MAX_CONVERSATIONS) break;
+      if (!item.cid || seenCids.has(item.cid)) continue;
+      if (await extractOne(item.cid, item.name, item.aliId)) openedThisRound += 1;
+    }
+
+    const listScroll = (await page.evaluate(SCROLL_LIST_DOWN_CALL).catch(() => null)) as
+      | { found: boolean; atBottom: boolean }
+      | null;
+    await page.waitForTimeout(SCROLL_WAIT_MS);
+    listScrolls += 1;
+    emptyStreak = openedThisRound === 0 ? emptyStreak + 1 : 0;
+    // 목록이 맨 아래(또는 스크롤 불가) + 2라운드 연속 새 대화 없음 → 끝.
+    if ((!listScroll || !listScroll.found || listScroll.atBottom) && emptyStreak >= 2) break;
   }
 
   await browser.close();
