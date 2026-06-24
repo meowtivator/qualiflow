@@ -43,7 +43,7 @@ async function saveSession(sessionDir: string, session: string): Promise<void> {
 
 // 클라이언트 생성 + gramjs 로그 끄기(INFO/WARN + 업데이트 루프 TIMEOUT 노이즈 제거).
 function newClient(session: string, apiId: number, apiHash: string): TelegramClient {
-  const client = newClient(session, apiId, apiHash);
+  const client = new TelegramClient(new StringSession(session), apiId, apiHash, { connectionRetries: 5 });
   client.setLogLevel(LogLevel.NONE);
   return client;
 }
