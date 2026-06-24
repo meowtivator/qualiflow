@@ -8,6 +8,24 @@
 --   lead/identity/thread는 자연키(channel_identities 유니크, threads의 (ws,channel,external_thread_id))로 find-or-create.
 -- 입력 p_conversations(jsonb 배열): [{ threadId, contact:{id,name,handle?}, messages:[{id,text,sentAt,direction}] }]
 
+-- 안전한 timestamptz 파싱: 잘못된 형식이면 예외를 던지지 않고 null을 돌려준다(호출부에서 now()로 대체).
+-- ★없으면: 메시지 하나의 sentAt 형식이 깨졌을 때 ::timestamptz 캐스트 예외 → ingest 함수 전체 롤백 →
+--   그 배치의 모든 lead/thread/message가 손실된다. 그래서 캐스트를 격리한다.
+create or replace function public.safe_timestamptz(p text)
+returns timestamptz
+language plpgsql
+immutable
+as $$
+begin
+  return nullif(p, '')::timestamptz;
+exception when others then
+  return null;
+end;
+$$;
+
+-- ⚠️ 동시성 한계(알려진, 현재 미발생): 같은 (workspace,channel,external_id/thread)를 '동시에' 두 번 ingest하면
+--    lead/thread/channel_connection의 select-then-insert에 레이스가 있을 수 있다. 현재는 에이전트가 계정별로
+--    '순차' push하므로 발생하지 않는다. 멀티에이전트/동시 ingest를 도입할 때 ON CONFLICT/잠금으로 강화한다.
 create or replace function public.ingest_conversations(
   p_token_hash text,
   p_channel text,
@@ -120,7 +138,7 @@ begin
         v_msg->>'id',
         case when v_msg->>'direction' = 'outbound' then 'outbound' else 'inbound' end,
         jsonb_build_object('text', coalesce(v_msg->>'text', '')),
-        coalesce((v_msg->>'sentAt')::timestamptz, now())
+        coalesce(public.safe_timestamptz(v_msg->>'sentAt'), now())
       )
       on conflict (workspace_id, channel_id, external_message_id) do nothing;
       if found then
