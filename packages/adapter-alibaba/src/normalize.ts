@@ -160,3 +160,55 @@ export function normalizeAlibabaConversation(raw: AlibabaRawConversation): {
 
   return { lead, thread, messages };
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// 에이전트 ingest용 변환: 알리바바 raw → '공통 ingest 형태'.
+// 위와 같은 규칙(방향=owner면 outbound, sendTime→ISO, 시스템메시지 type 2 제외)을 재사용하되,
+// core 타입이 아니라 서버 /api/agents/ingest 가 기대하는 DTO로 낸다:
+//   { threadId, contact:{id,name?,handle?}, messages:[{id,text,sentAt,direction}] }
+// contact.id = 채널 외부키(aliId) — 서버가 channel_identity 매칭/멱등에 쓴다.
+// ────────────────────────────────────────────────────────────────────────
+
+export type AlibabaIngestConversation = {
+  threadId: string;
+  contact: { id: string; name?: string; handle?: string };
+  messages: Array<{ id: string; text: string; sentAt: string; direction: MessageDirection }>;
+};
+
+// 알리바바 content는 <br/> 같은 HTML 조각을 포함한다 → 평문으로. <br> = 줄바꿈, 나머지 태그 제거.
+function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+}
+
+export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): AlibabaIngestConversation[] {
+  return raw.map((conversation) => {
+    const ownerAliId = conversation.owner.aliId;
+    const externalId = conversation.contact.aliId ?? conversation.contact.loginId ?? "unknown";
+    const threadId = conversation.messages[0]?.conversationCode ?? `alibaba_${externalId}`;
+
+    const messages = conversation.messages
+      .filter((message) => message.type !== ALIBABA_SYSTEM_TYPE)
+      .map((message) => ({
+        id: message.uuid ?? String(message.messageId),
+        text:
+          typeof message.content === "string"
+            ? htmlToText(message.content)
+            : `[미지원 메시지 type: ${message.type ?? message.msgType ?? "unknown"}]`,
+        sentAt: toIso(message.sendTime),
+        direction: (message.sender?.targetId === ownerAliId ? "outbound" : "inbound") as MessageDirection
+      }));
+
+    return {
+      threadId,
+      contact: {
+        id: externalId,
+        name: conversation.contact.name ?? conversation.contact.loginId,
+        handle: conversation.contact.loginId
+      },
+      messages
+    };
+  });
+}
