@@ -98,7 +98,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL);
+  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL, { offscreen: true });
 
   try {
     if (!(await waitForCdp(DEBUG_PORT))) {

@@ -82,18 +82,20 @@ async function callInbox(page: Page): Promise<IgInbox | null> {
   return (result as IgInbox | null) ?? null;
 }
 
-function spawnChrome(profileDir: string, chromePath: string): ChildProcess {
-  return spawn(
-    chromePath,
-    [
-      `--user-data-dir=${profileDir}`,
-      `--remote-debugging-port=${DEBUG_PORT}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      INBOX_URL
-    ],
-    { stdio: "ignore" }
-  );
+// offscreen=true: 창을 화면 밖으로(사용자 안 보임, fetch/send용). 로그인은 보여야 하므로 false.
+//   QUALIFLOW_SHOW_BROWSER=1 이면 디버깅용으로 항상 보인다.
+function spawnChrome(profileDir: string, chromePath: string, offscreen: boolean): ChildProcess {
+  const args = [
+    `--user-data-dir=${profileDir}`,
+    `--remote-debugging-port=${DEBUG_PORT}`,
+    "--no-first-run",
+    "--no-default-browser-check"
+  ];
+  if (offscreen && process.env.QUALIFLOW_SHOW_BROWSER !== "1") {
+    args.push("--window-position=-32000,-32000", "--window-size=1280,800");
+  }
+  args.push(INBOX_URL);
+  return spawn(chromePath, args, { stdio: "ignore" });
 }
 
 // 텍스트가 맞는 첫 클릭가능 요소(버튼/링크/role=button)를 누른다.
@@ -133,9 +135,14 @@ async function tryOneTapContinue(page: Page): Promise<void> {
 }
 
 // 브라우저를 띄워 로그인된 페이지에 접근하는 공통 골격. fn 안에서 page로 작업한다.
-async function withInstagramPage<T>(profileDir: string, fn: (page: Page) => Promise<T>): Promise<T> {
+//   offscreen: 로그인은 false(사용자가 봐야 함), fetch/send는 true(창 안 보이게).
+async function withInstagramPage<T>(
+  profileDir: string,
+  fn: (page: Page) => Promise<T>,
+  options: { offscreen?: boolean } = {}
+): Promise<T> {
   const chromePath = await findChrome();
-  const chrome = spawnChrome(profileDir, chromePath);
+  const chrome = spawnChrome(profileDir, chromePath, options.offscreen ?? false);
   try {
     if (!(await waitForCdp(DEBUG_PORT))) {
       throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 있으면 닫고 다시 시도하세요.");
@@ -218,7 +225,7 @@ export async function fetchInstagram(profileDir: string): Promise<ChatRawConvers
     }
 
     return conversations;
-  });
+  }, { offscreen: true });
 }
 
 // 메시지 발송 — IG 웹은 DM을 GraphQL 뮤테이션(IGDirectTextSendMutation)으로 보낸다(REST broadcast는 막힘).
@@ -297,5 +304,5 @@ export async function sendInstagram(profileDir: string, recipientId: string, tex
       throw new Error(`Instagram 발송 실패: ${result}`);
     }
     console.log(`📤 Instagram 발송 완료 → ${recipientId} (${result})`);
-  });
+  }, { offscreen: true });
 }

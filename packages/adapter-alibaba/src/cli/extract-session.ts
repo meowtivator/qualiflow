@@ -258,7 +258,7 @@ async function main() {
   }
 
   // 자동화 플래그 없는 "그냥 크롬" + inquiry:login 이 만든 영구 프로필.
-  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL);
+  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL, { offscreen: true });
 
   const ready = await waitForCdp(DEBUG_PORT);
   if (!ready) {
