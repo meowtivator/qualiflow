@@ -10,6 +10,7 @@
     "status": "tsx ./src/cli.ts status",
     "bundle": "node build.mjs",
     "package": "node package-app.mjs",
+    "dist:macos": "node make-dist-macos.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
