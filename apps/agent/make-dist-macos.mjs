@@ -33,7 +33,9 @@ LOG="$HOME/Library/Logs/qualiflow-agent.log"
 
 echo "QualiFlow 에이전트를 설치합니다..."
 mkdir -p "$DEST" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
-cp -R "$HERE/package/." "$DEST/"
+# cp -R 은 com.apple.provenance 같은 보호 확장속성 복사에 막혀 "Operation not permitted"가 난다.
+# macOS 전용 ditto 로 복사한다(확장속성/권한을 알맞게 처리).
+ditto "$HERE/package" "$DEST"
 chmod +x "$DEST/node" "$DEST/run.sh"
 # 인터넷에서 받은 파일의 macOS 격리 속성 해제(= 서명 우회로 실행 허용)
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
