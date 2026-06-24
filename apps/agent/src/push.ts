@@ -5,6 +5,8 @@
 
 import { readFile } from "node:fs/promises";
 
+import { alibabaToIngestConversations } from "@qualiflow/adapter-alibaba/runtime";
+
 import { dataFile, listAccounts } from "./accounts";
 import { authedFetch } from "./api-client";
 
@@ -46,13 +48,20 @@ export type PushResult = {
   detail: string;
 };
 
+// 채널별 '원시 → 공통 ingest 형태' 정규화기. 등록된 채널(알리바바)은 변환, 그 외는 이미 공통이면 그대로 push.
+const NORMALIZERS: Record<string, (raw: unknown) => NormalizedConversation[]> = {
+  alibaba: (raw) => alibabaToIngestConversations(raw as never)
+};
+
 async function pushAccount(channel: string, label: string): Promise<PushResult> {
-  const conversations = await readConversations(channel, label);
-  if (conversations === null) {
+  const raw = await readConversations(channel, label);
+  if (raw === null) {
     return { channel, label, status: "skipped", detail: "대화 파일 없음(먼저 fetch)" };
   }
-  if (!isNormalized(conversations)) {
-    return { channel, label, status: "skipped", detail: "정규화 안 된 형태(예: 알리바바 원시) — 후속 PR에서 지원" };
+  const normalizer = NORMALIZERS[channel];
+  const conversations = normalizer ? normalizer(raw) : isNormalized(raw) ? raw : null;
+  if (!conversations || conversations.length === 0) {
+    return { channel, label, status: "skipped", detail: "정규화 결과 없음/미지원 형태" };
   }
   try {
     const response = await authedFetch("/api/agents/ingest", {

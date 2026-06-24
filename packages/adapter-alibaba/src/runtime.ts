@@ -6,3 +6,5 @@
 export { loginAlibaba } from "./cli/login-session";
 export { extractAlibaba } from "./cli/extract-session";
 export { sendAlibaba } from "./cli/send-session";
+// 순수 변환(알리바바 raw → ingest DTO). 에이전트 push가 알리바바를 서버로 올릴 때 사용.
+export { alibabaToIngestConversations, type AlibabaIngestConversation } from "./normalize";
