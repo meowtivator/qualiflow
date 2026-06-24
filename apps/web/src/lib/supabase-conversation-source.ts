@@ -5,7 +5,6 @@
 
 import {
   BUILT_IN_CHANNELS,
-  type Channel,
   type ConversationAdapter,
   type Lead,
   type LeadStage,
@@ -21,6 +20,7 @@ import {
 } from "@qualiflow/core";
 
 import { createClient } from "@/lib/supabase/server";
+import { resolveChannel } from "./conversation-source";
 import type { ConversationSource } from "./conversation-store";
 
 type LeadRow = {
@@ -69,12 +69,6 @@ type MessageRow = {
   sent_at: string;
   received_at: string | null;
 };
-
-function resolveChannel(channelId: string): Channel {
-  return channelId in BUILT_IN_CHANNELS
-    ? BUILT_IN_CHANNELS[channelId as keyof typeof BUILT_IN_CHANNELS]
-    : BUILT_IN_CHANNELS.manual;
-}
 
 function mapLead(row: LeadRow): Lead {
   return {
@@ -137,14 +131,14 @@ function mapMessage(row: MessageRow): Message {
 
 type ServerClient = Awaited<ReturnType<typeof createClient>>;
 
-function createSupabaseAdapter(supabase: ServerClient): ConversationAdapter {
+function createSupabaseAdapter(supabase: ServerClient, leads: Lead[]): ConversationAdapter {
   return {
     id: "supabase",
     label: "All channels (DB)",
     channel: BUILT_IN_CHANNELS.manual,
     async listLeads() {
-      const { data } = await supabase.from("leads").select("*").order("updated_at", { ascending: false }).limit(500);
-      return { items: ((data as LeadRow[] | null) ?? []).map(mapLead) };
+      // loadConversationSourceFromDb에서 이미 로드한 leads를 재사용한다(페이지 로드당 leads 이중 쿼리 제거).
+      return { items: leads };
     },
     async listThreads(request) {
       let query = supabase.from("threads").select("*").order("last_message_at", { ascending: false }).limit(500);
@@ -201,7 +195,7 @@ export async function loadConversationSourceFromDb(): Promise<ConversationSource
       detail: `leads ${leads.length}`,
       tone: "ok"
     },
-    adapter: createSupabaseAdapter(supabase),
+    adapter: createSupabaseAdapter(supabase, leads),
     getLead: (leadId) => leadById.get(leadId),
     getChannel: (channelId) => resolveChannel(channelId),
     // DB 대화엔 아직 등급(qualification)이 없다 — in-product AI가 채울 자리.

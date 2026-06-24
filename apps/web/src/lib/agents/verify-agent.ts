@@ -3,19 +3,11 @@
 //   대조한다(pepper는 서버 env에만). 성공 시 {agentId, workspaceId}, 실패 시 null.
 //   서버 전용 — 클라이언트로 import 금지(pepper가 들어있는 pairing.ts에 의존).
 
+import { bearerToken } from "@/lib/agents/agent-request";
 import { hmacHash, isPairingConfigured } from "@/lib/agents/pairing";
 import { createClient } from "@/lib/supabase/server";
 
 export type AgentIdentity = { agentId: string; workspaceId: string };
-
-function bearerToken(request: Request): string | null {
-  const header = request.headers.get("authorization") ?? "";
-  if (!header.startsWith("Bearer ")) {
-    return null;
-  }
-  const token = header.slice("Bearer ".length).trim();
-  return token || null;
-}
 
 export async function verifyAgent(request: Request): Promise<AgentIdentity | null> {
   if (!isPairingConfigured()) {

@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 
+import { agentTokenErrorResponse, bearerToken } from "@/lib/agents/agent-request";
 import { hmacHash, isPairingConfigured } from "@/lib/agents/pairing";
 import { createClient } from "@/lib/supabase/server";
 
@@ -13,14 +14,6 @@ type IngestBody = {
   accountLabel?: unknown;
   conversations?: unknown;
 };
-
-function bearerToken(request: Request): string | null {
-  const header = request.headers.get("authorization") ?? "";
-  if (!header.startsWith("Bearer ")) {
-    return null;
-  }
-  return header.slice("Bearer ".length).trim() || null;
-}
 
 export async function POST(request: Request) {
   if (!isPairingConfigured()) {
@@ -58,11 +51,7 @@ export async function POST(request: Request) {
   });
 
   if (error) {
-    const invalidToken = error.message?.includes("invalid agent token");
-    return NextResponse.json(
-      { ok: false, message: invalidToken ? "유효하지 않은 에이전트 토큰입니다." : "인그est에 실패했습니다." },
-      { status: invalidToken ? 401 : 400 }
-    );
+    return agentTokenErrorResponse(error, "인그est에 실패했습니다.");
   }
 
   const row = Array.isArray(data) ? data[0] : data;
