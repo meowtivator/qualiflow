@@ -183,7 +183,11 @@ async function main() {
         const startedAt = new Date().toISOString();
         console.log(`\n[${startedAt}] 동기화 시작...`);
         try {
-          await fetchAllAccounts({ cached: false });
+          const summaries = await fetchAllAccounts({ cached: false });
+          console.log("── 사이클 요약 ──");
+          for (const summary of summaries) {
+            console.log(`   ${summary.channel}/${summary.label}: 대화 ${summary.conversationCount} · 메시지 ${summary.messageCount}`);
+          }
         } catch (error) {
           // 한 사이클이 실패해도 데몬은 죽지 않는다(다음 주기에 재시도).
           console.error(`동기화 사이클 오류: ${error instanceof Error ? error.message : String(error)}`);

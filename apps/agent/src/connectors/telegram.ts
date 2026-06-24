@@ -10,6 +10,7 @@ import { createInterface } from "node:readline/promises";
 
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
 import { TelegramClient } from "telegram";
+import { LogLevel } from "telegram/extensions/Logger";
 import { StringSession } from "telegram/sessions";
 
 const TELEGRAM_HISTORY_LIMIT = Number(process.env.QUALIFLOW_TG_HISTORY) || 100; // 대화당 최근 메시지 수
@@ -40,12 +41,17 @@ async function saveSession(sessionDir: string, session: string): Promise<void> {
   await writeFile(sessionFile(sessionDir), session, "utf8");
 }
 
+// 클라이언트 생성 + gramjs 로그 끄기(INFO/WARN + 업데이트 루프 TIMEOUT 노이즈 제거).
+function newClient(session: string, apiId: number, apiHash: string): TelegramClient {
+  const client = newClient(session, apiId, apiHash);
+  client.setLogLevel(LogLevel.NONE);
+  return client;
+}
+
 // 전화 코드 로그인(대화형). 세션 문자열을 sessionDir 에 저장한다.
 export async function loginTelegram(sessionDir: string): Promise<void> {
   const { apiId, apiHash } = getApiCreds();
-  const client = new TelegramClient(new StringSession(await loadSession(sessionDir)), apiId, apiHash, {
-    connectionRetries: 5
-  });
+  const client = newClient(await loadSession(sessionDir), apiId, apiHash);
 
   const rl = createInterface({ input, output });
   try {
@@ -72,7 +78,7 @@ export async function fetchTelegram(sessionDir: string): Promise<ChatRawConversa
     throw new Error("Telegram 세션이 없습니다. 먼저 'add telegram <라벨>'로 로그인하세요.");
   }
 
-  const client = new TelegramClient(new StringSession(session), apiId, apiHash, { connectionRetries: 5 });
+  const client = newClient(session, apiId, apiHash);
   await client.connect();
   try {
     const dialogs = await client.getDialogs({ limit: 50 });
@@ -145,7 +151,7 @@ export async function sendTelegram(sessionDir: string, recipient: string, text: 
   if (!session) {
     throw new Error("Telegram 세션이 없습니다. 먼저 'add telegram <라벨>'로 로그인하세요.");
   }
-  const client = new TelegramClient(new StringSession(session), apiId, apiHash, { connectionRetries: 5 });
+  const client = newClient(session, apiId, apiHash);
   await client.connect();
   try {
     const target = await resolveTelegramTarget(client, recipient);
