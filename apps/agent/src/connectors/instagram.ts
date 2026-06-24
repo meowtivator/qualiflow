@@ -207,7 +207,9 @@ export async function fetchInstagram(profileDir: string): Promise<ChatRawConvers
       messages.reverse(); // 최신순 → 오래된 순
 
       const other = (thread.users ?? [])[0];
-      const threadId = String(thread.thread_id ?? other?.pk ?? "");
+      // ★발송은 recipient pk(상대 user igid)로 한다(IGDirectTextSendMutation의 recipient_igids).
+      //   그래서 1:1 DM은 상대 pk를 id로 저장한다(thread_id 39자리로는 발송 불가). 그룹은 첫 참가자 pk(한계).
+      const threadId = String(other?.pk ?? thread.thread_id ?? "");
       conversations.push({
         threadId,
         contact: { id: threadId, name: thread.thread_title ?? other?.full_name ?? other?.username ?? "instagram" },
@@ -219,52 +221,72 @@ export async function fetchInstagram(profileDir: string): Promise<ChatRawConvers
   });
 }
 
-// 메시지 발송 — mautrix와 같은 내부 웹 API(broadcast)를 로그인된 페이지에서 POST한다.
-//   threadId = 불러온 대화의 threadId(=IG thread_id). client_context = 멱등키(중복 전송 방지).
-export async function sendInstagram(profileDir: string, threadId: string, text: string): Promise<void> {
+// 메시지 발송 — IG 웹은 DM을 GraphQL 뮤테이션(IGDirectTextSendMutation)으로 보낸다(REST broadcast는 막힘).
+//   recipientId = 불러온 대화의 threadId(=상대 user pk). 페이지에서 fb_dtsg/lsd(쓰기 CSRF)를 추출해 POST.
+export async function sendInstagram(profileDir: string, recipientId: string, text: string): Promise<void> {
   const script = `(async () => {
     try {
-      var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
-      // IG 웹은 idempotency용으로 숫자 컨텍스트를 쓴다(언더스코어 없는 큰 숫자).
-      var ctx = String(Date.now()) + String(Math.floor(Math.random() * 1000000));
+      function cookie(name) { var m = document.cookie.match(new RegExp(name + "=([^;]+)")); return m ? decodeURIComponent(m[1]) : ""; }
+      // fb_dtsg / lsd 토큰을 페이지 부트스트랩 스크립트에서 추출(쓰기엔 이게 필수 — 없으면 로그인으로 튕김).
+      function tok(name) {
+        try { if (window.require) { var mod = window.require(name); if (mod && mod.token) return mod.token; } } catch (e1) {}
+        var m = document.documentElement.innerHTML.match(new RegExp('"' + name + '".{0,80}?"token":"([^"]+)"'));
+        return m ? m[1] : "";
+      }
+      var csrf = cookie("csrftoken");
+      var av = cookie("ds_user_id");        // 보내는(내) 계정 id
+      var dtsg = tok("DTSGInitData");
+      var lsd = tok("LSD");
+      if (!dtsg || !av) { return "fail: 토큰추출 실패 dtsg=" + (dtsg ? "y" : "n") + " lsd=" + (lsd ? "y" : "n") + " av=" + (av ? "y" : "n"); }
+      var jazoest = 0; for (var i = 0; i < dtsg.length; i++) { jazoest += dtsg.charCodeAt(i); } jazoest = "2" + jazoest;
+      var oti = String(Date.now()) + String(Math.floor(Math.random() * 1000000)); // offline_threading_id(멱등)
+      var variables = {
+        ig_thread_igid: null,
+        offline_threading_id: oti,
+        recipient_igids: [${JSON.stringify(recipientId)}],
+        replied_to_client_context: null, replied_to_item_id: null, reply_to_message_id: null, sampled: null,
+        text: { sensitive_string_value: ${JSON.stringify(text)} },
+        mentions: [], mentioned_user_ids: [], commands: null,
+        forwarded_from_thread_id: null, is_forwarded_from_own_message: null,
+        send_attribution: "igd_web_chat_tab:in_thread"
+      };
       var body = new URLSearchParams();
-      body.set("action", "send_item");
-      body.set("send_attribution", "direct_thread");
-      body.set("thread_ids", "[" + ${JSON.stringify(threadId)} + "]");
-      body.set("text", ${JSON.stringify(text)});
-      body.set("offline_threading_id", ctx);
-      body.set("client_context", ctx);
-      body.set("mutation_token", ctx);
-      body.set("_csrftoken", csrf);
-      var res = await fetch("/api/v1/direct_v2/threads/broadcast/text/", {
+      body.set("av", av);
+      body.set("__a", "1");
+      body.set("__comet_req", "7");
+      body.set("fb_dtsg", dtsg);
+      body.set("jazoest", jazoest);
+      body.set("lsd", lsd);
+      body.set("variables", JSON.stringify(variables));
+      body.set("doc_id", "26911679871773184");
+      body.set("fb_api_caller_class", "RelayModern");
+      body.set("fb_api_req_friendly_name", "IGDirectTextSendMutation");
+      body.set("server_timestamps", "true");
+      var res = await fetch("/api/graphql", {
         method: "POST",
         headers: {
-          "X-IG-App-ID": "${IG_APP_ID}",
           "X-CSRFToken": csrf,
-          "X-ASBD-ID": "129477",
-          "X-IG-WWW-Claim": "0",
-          "X-Requested-With": "XMLHttpRequest",
+          "X-FB-Friendly-Name": "IGDirectTextSendMutation",
+          "X-FB-LSD": lsd,
+          "X-ASBD-ID": "359341",
+          "X-IG-App-ID": "${IG_APP_ID}",
           "content-type": "application/x-www-form-urlencoded"
         },
         credentials: "include",
         body: body.toString()
       });
-      var bodyText = await res.text();
-      var json = null;
-      try { json = JSON.parse(bodyText); } catch (e2) {}
-      // ★200(res.ok)만으로 성공으로 보면 안 된다 — 본문 status가 "ok"여야 실제 전송됨.
-      if (res.ok && json && json.status === "ok") {
-        return "ok:" + ((json.payload && json.payload.item_id) || "sent");
-      }
-      // 진단: 리다이렉트 여부 + 최종 URL이 핵심(로그인으로 튀었는지 vs 엔드포인트 문제인지).
-      var kind = json ? ("json:" + JSON.stringify(json).slice(0, 200)) : ("html:" + bodyText.slice(0, 120));
-      return "fail status=" + res.status + " redirected=" + res.redirected + " url=" + res.url + " " + kind;
+      var t = await res.text();
+      if (t.indexOf("for (;;);") === 0) { t = t.slice(9); } // FB 안티-하이재킹 프리픽스 제거
+      var j = null;
+      try { j = JSON.parse(t); } catch (e2) { try { j = JSON.parse(t.split("\\n")[0]); } catch (e3) {} }
+      if (res.ok && j && j.data && !j.errors) { return "ok:sent"; }
+      return "fail status=" + res.status + " body=" + t.slice(0, 250);
     } catch (e) { return "error:" + (e && e.message ? e.message : String(e)); }
   })()`;
 
   await withInstagramPage(profileDir, async (page) => {
     await delay(1500); // 페이지/세션 로드 대기
-    // 로그인 페이지에 발송 POST를 쏘지 않는다 — 세션이 살아있는지 인박스 API로 먼저 확인.
+    // 로그인 페이지에 쏘지 않게 세션이 살아있는지 인박스 API로 먼저 확인.
     if (!(await callInbox(page))?.inbox) {
       throw new Error(
         "인스타 세션이 만료됐어요('계속' 화면 자동 복구 실패). 'login instagram <라벨>'로 재로그인 후 다시 보내세요."
@@ -274,6 +296,6 @@ export async function sendInstagram(profileDir: string, threadId: string, text: 
     if (!result.startsWith("ok")) {
       throw new Error(`Instagram 발송 실패: ${result}`);
     }
-    console.log(`📤 Instagram 발송 완료 → thread ${threadId} (${result})`);
+    console.log(`📤 Instagram 발송 완료 → ${recipientId} (${result})`);
   });
 }
