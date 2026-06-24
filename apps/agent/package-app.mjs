@@ -53,16 +53,21 @@ if (process.platform !== "win32") {
 }
 console.log(`③ Node 바이너리 동봉(${nodeName})`);
 
-// 4. 런처 — 두 OS용. QUALIFLOW_HOME + QUALIFLOW_CLOUD_URL(설치본은 클라우드를 가리킨다) 세팅 후 실행.
-// ★CLOUD_URL: 지금은 qualiflow.meowti.kr. 통합이 buyer-crm으로 넘어가면 그 도메인(crm.thedozers.com 등)으로 바꾼다.
-//   둘 다 미리 설정된 env가 있으면 그걸 우선(:- 기본값).
-const CLOUD_URL = "https://qualiflow.meowti.kr";
+// 4. 런처 — 두 OS용. QUALIFLOW_HOME + QUALIFLOW_CLOUD_URL + (있으면)텔레그램 api 세팅 후 실행.
+// ★CLOUD_URL은 공개값(레포에 박아도 OK). 텔레그램 api_id/hash는 '빌드 env'에서만 읽는다(레포에 시크릿 안 박힘).
+//   빌드 시 TELEGRAM_API_ID/HASH 를 주면 설치본 런처에 주입돼, 대표는 전화번호+코드만 넣으면 된다.
+//   (설치본에 동봉되면 노출됨 — 단일 대표/데모 한정. 미리 설정된 env가 있으면 그걸 우선.)
+const CLOUD_URL = process.env.QUALIFLOW_CLOUD_URL || "https://qualiflow.thedozers.com";
+const TG_API_ID = process.env.TELEGRAM_API_ID || "";
+const TG_API_HASH = process.env.TELEGRAM_API_HASH || "";
 writeFileSync(
   resolve(out, "run.sh"),
   `#!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export QUALIFLOW_HOME="\${QUALIFLOW_HOME:-$HOME/.qualiflow}"
 export QUALIFLOW_CLOUD_URL="\${QUALIFLOW_CLOUD_URL:-${CLOUD_URL}}"
+export TELEGRAM_API_ID="\${TELEGRAM_API_ID:-${TG_API_ID}}"
+export TELEGRAM_API_HASH="\${TELEGRAM_API_HASH:-${TG_API_HASH}}"
 mkdir -p "$QUALIFLOW_HOME"
 exec "$DIR/node" "$DIR/agent.mjs" "$@"
 `
@@ -72,7 +77,7 @@ if (process.platform !== "win32") {
 }
 writeFileSync(
   resolve(out, "run.cmd"),
-  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not defined QUALIFLOW_CLOUD_URL set "QUALIFLOW_CLOUD_URL=${CLOUD_URL}"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
+  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not defined QUALIFLOW_CLOUD_URL set "QUALIFLOW_CLOUD_URL=${CLOUD_URL}"\r\nif not defined TELEGRAM_API_ID set "TELEGRAM_API_ID=${TG_API_ID}"\r\nif not defined TELEGRAM_API_HASH set "TELEGRAM_API_HASH=${TG_API_HASH}"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
 );
 
 console.log("✅ 배포 폴더 완성: apps/agent/dist/package/  →  run.sh / run.cmd <명령>");

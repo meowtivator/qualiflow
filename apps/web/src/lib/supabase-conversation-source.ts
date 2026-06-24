@@ -19,6 +19,7 @@ import {
   type FollowUpState
 } from "@qualiflow/core";
 
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveChannel } from "./conversation-source";
 import type { ConversationSource } from "./conversation-store";
@@ -162,18 +163,27 @@ function createSupabaseAdapter(supabase: ServerClient, leads: Lead[]): Conversat
 
 // 로그인 사용자의 워크스페이스 DB에서 인박스 소스를 만든다. 비로그인/데이터 없음이면 null(폴백).
 export async function loadConversationSourceFromDb(): Promise<ConversationSource | null> {
+  // ★데모 모드(QUALIFLOW_DISABLE_AUTH=1): 로그인 없이 service-key로 DB를 읽어 보여준다(RLS 우회 — 배포 데모 전용).
+  //   평상시(데모 아님)엔 기존대로 로그인 사용자 세션으로만 읽는다.
   let supabase: ServerClient;
-  try {
-    supabase = await createClient();
-  } catch {
-    return null; // Supabase 미설정
-  }
-
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return null; // 비로그인 → .data/mock 폴백
+  if (process.env.QUALIFLOW_DISABLE_AUTH === "1") {
+    try {
+      supabase = createAdminClient() as unknown as ServerClient;
+    } catch {
+      return null; // service-key 미설정
+    }
+  } else {
+    try {
+      supabase = await createClient();
+    } catch {
+      return null; // Supabase 미설정
+    }
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return null; // 비로그인 → .data/mock 폴백
+    }
   }
 
   const { data: leadRows, error } = await supabase
