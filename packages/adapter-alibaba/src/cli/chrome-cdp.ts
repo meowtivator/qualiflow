@@ -6,6 +6,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { access } from "node:fs/promises";
+import { resolve } from "node:path";
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -28,6 +29,17 @@ export async function findChrome(): Promise<string | null> {
 
 export function delay(ms: number): Promise<void> {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+}
+
+// 에이전트 데이터 폴더(.data) 안의 파일 경로를 만든다.
+//   - 설치본: QUALIFLOW_HOME/.data  (런처 run.sh/run.cmd가 QUALIFLOW_HOME을 세팅함)
+//   - 개발(레포에서 pnpm 실행): cwd가 패키지 폴더라 ../../apps/web/.data 로 떨어진다(기존 동작 유지)
+// ★resolve("../../apps/web/.data/...")를 직접 쓰면 설치본은 cwd가 제멋대로라 엉뚱한 곳에 파일을 쓴다.
+//   그 cwd-상대 버그를 막으려고 경로 계산을 이 헬퍼 하나로 모은다.
+export function dataFile(name: string): string {
+  const home = process.env.QUALIFLOW_HOME;
+  const dir = home ? resolve(home, ".data") : resolve("../../apps/web/.data");
+  return resolve(dir, name);
 }
 
 // 크롬 디버그 포트(CDP)가 열릴 때까지 대기.
