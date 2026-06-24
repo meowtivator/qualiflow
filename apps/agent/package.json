@@ -11,6 +11,7 @@
     "bundle": "node build.mjs",
     "package": "node package-app.mjs",
     "dist:macos": "node make-dist-macos.mjs",
+    "dist:windows": "node make-dist-windows.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
