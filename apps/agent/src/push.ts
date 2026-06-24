@@ -13,7 +13,8 @@ import { authedFetch } from "./api-client";
 type NormalizedConversation = {
   threadId?: string;
   contact?: { id?: string; name?: string; handle?: string };
-  messages?: Array<{ id?: string; text?: string; sentAt?: string; direction?: string }>;
+  // attachments는 그대로 서버로 흘려보낸다(여기선 모양 검증만, 미디어 구조는 core MessageAttachment).
+  messages?: Array<{ id?: string; text?: string; sentAt?: string; direction?: string; attachments?: unknown[] }>;
 };
 
 function isNormalized(value: unknown): value is NormalizedConversation[] {

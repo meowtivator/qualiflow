@@ -1,4 +1,4 @@
-import type { Lead, Message, MessageDirection, Thread } from "@qualiflow/core";
+import type { Lead, Message, MessageAttachment, MessageDirection, Thread } from "@qualiflow/core";
 
 import type { AlibabaRawConversation, AlibabaRawMessage } from "./raw-types.js";
 
@@ -172,7 +172,13 @@ export function normalizeAlibabaConversation(raw: AlibabaRawConversation): {
 export type AlibabaIngestConversation = {
   threadId: string;
   contact: { id: string; name?: string; handle?: string };
-  messages: Array<{ id: string; text: string; sentAt: string; direction: MessageDirection }>;
+  messages: Array<{
+    id: string;
+    text: string;
+    sentAt: string;
+    direction: MessageDirection;
+    attachments?: MessageAttachment[]; // 사진·영상 등(있으면)
+  }>;
 };
 
 // 알리바바 content는 <br/> 같은 HTML 조각을 포함한다 → 평문으로. <br> = 줄바꿈, 나머지 태그 제거.
