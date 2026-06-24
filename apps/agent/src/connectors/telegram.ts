@@ -67,7 +67,7 @@ export async function loginTelegram(sessionDir: string): Promise<void> {
 
   await saveSession(sessionDir, String(client.session.save()));
   console.log("✅ Telegram 로그인 완료 — 세션을 로컬에 저장했습니다.");
-  await client.disconnect();
+  await client.destroy(); // ★disconnect()는 업데이트 루프를 안 멈춤(while !_destroyed) → destroy()로 완전 정리
 }
 
 // 저장된 세션으로 연결해 인박스를 읽어 ChatRawConversation[]로 정규화한다.
@@ -123,7 +123,7 @@ export async function fetchTelegram(sessionDir: string): Promise<ChatRawConversa
 
     return conversations;
   } finally {
-    await client.disconnect();
+    await client.destroy(); // ★disconnect()는 업데이트 루프를 안 멈춤(while !_destroyed) → destroy()로 완전 정리
   }
 }
 
@@ -157,6 +157,6 @@ export async function sendTelegram(sessionDir: string, recipient: string, text: 
     const target = await resolveTelegramTarget(client, recipient);
     await client.sendMessage(target as never, { message: text });
   } finally {
-    await client.disconnect();
+    await client.destroy(); // ★disconnect()는 업데이트 루프를 안 멈춤(while !_destroyed) → destroy()로 완전 정리
   }
 }
