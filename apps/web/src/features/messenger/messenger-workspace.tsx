@@ -39,6 +39,7 @@ export function MessengerWorkspace({
           lead={selectedLead}
           messages={messages}
           qualification={selectedQualification}
+          selectedThreadId={selectedThreadId}
         />
         <LeadContextPanel channels={selectedLeadChannels} lead={selectedLead} qualification={selectedQualification} />
       </section>
