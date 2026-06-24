@@ -62,10 +62,24 @@ dist/package/
   `run.sh daemon`을 등록 → 백그라운드 상주. (이 macOS launchd install.sh는 *dev(레포)* 용; 배포본은
   설치마법사가 같은 launchd 등록을 패키지 경로로.)
 
+## macOS 설치본 (.command, 서명 우회) — 됨
+
+```bash
+pnpm --filter @qualiflow/agent dist:macos     # → apps/agent/dist/macos-dist/  (zip해서 배포)
+```
+구성: `package/`(런타임) + `install.command` + `uninstall.command` + `README.txt`.
+
+받는 사람: `install.command` **우클릭 → 열기**(서명 없어 더블클릭은 막힘) → 설치마법사가:
+①`package/`를 `~/Library/Application Support/QualiFlow/`로 복사 ②격리 속성 해제(`xattr` = 서명 우회)
+③**launchd 등록**(`run.sh daemon`, 로그인 자동시작+상시) → 백그라운드 동기화 시작.
+데이터/세션은 `~/.qualiflow`. 채널 로그인은 `…/QualiFlow/run.sh add <채널> <라벨>`(이때만 크롬 보임).
+> ⚠️ 스크립트 문법 + 생성 plist 유효성은 검증함. *실제 설치 동작*은 받는 입장에서 한 번 확인 필요
+> (여기서 깔면 이 맥에 서비스가 등록되는 부작용이라 미실행).
+
 ## 다음 단계 (로드맵)
 
-1. **설치마법사(.dmg/.pkg)** — 위 `dist/package`를 숨겨진 위치(예: `~/Library/Application Support/QualiFlow`)에
-   복사 + launchd 등록(`run.sh daemon`) + 서명 우회 안내. (원하면 폴더를 `.app` 구조로 감싸 아이콘 1개로.)
+1. **(선택) GUI .pkg 마법사** — 비-개발자 배포 시 그래픽 설치(`pkgbuild`/`productbuild`, 사용자 도메인 +
+   postinstall launchd). `.command`로 충분하면 생략.
 2. **Windows** — 같은 패키지(`node.exe` + agent.mjs + node_modules) + 작업 스케줄러 등록 + SmartScreen 우회.
 3. **본인 VPS 연결(서버단)** — 데몬이 바깥으로 상시 연결 → 명령 수신 + 데이터 push → 프론트 표시.
 4. (선택) **Node SEA** — 진짜 단일 실행파일이 꼭 필요하면. 네이티브 동봉·서명 난관 있음(A안으로 충분하면 생략).
