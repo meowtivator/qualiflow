@@ -1,0 +1,60 @@
+name: build-agent
+
+# 로컬 에이전트 배포본을 각 OS의 "진짜 머신"(GitHub 러너)에서 빌드 + 스모크 테스트 + 산출물 업로드.
+# → 개발 맥이 아니라 깨끗한 환경에서 재현, 그리고 Windows 패키지를 Windows 머신 없이 빌드/검증.
+
+on:
+  push:
+    paths:
+      - "apps/agent/**"
+      - "packages/**"
+      - ".github/workflows/build-agent.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: "dist:macos"
+            artifact: macos-dist
+          - os: windows-latest
+            script: "dist:windows"
+            artifact: win-dist
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build distributable
+        run: pnpm --filter @qualiflow/agent ${{ matrix.script }}
+
+      # 동봉 node로 번들이 실제로 도는지(=external 의존성 해석 + 임포트 OK) 확인. 계정 없으면 "없음" + exit 0.
+      - name: Smoke test (bundled node runs the agent)
+        shell: bash
+        run: |
+          export QUALIFLOW_HOME="${RUNNER_TEMP}/qf"
+          cd apps/agent/dist/package
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./node.exe agent.mjs accounts
+          else
+            ./node agent.mjs accounts
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualiflow-agent-${{ runner.os }}
+          path: apps/agent/dist/${{ matrix.artifact }}
+          retention-days: 14

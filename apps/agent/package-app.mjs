@@ -45,12 +45,15 @@ writeFileSync(
 console.log("② external 의존성 설치 중(npm)...");
 execSync("npm install --omit=dev --no-audit --no-fund", { cwd: out, stdio: "inherit" });
 
-// 3. 현재 Node 바이너리 동봉(같은 OS/arch에서 시스템 Node 없이 실행)
-copyFileSync(process.execPath, resolve(out, "node"));
-chmodSync(resolve(out, "node"), 0o755);
-console.log("③ node 바이너리 동봉");
+// 3. 현재 Node 바이너리 동봉(빌드한 OS/arch용 — CI가 각 OS 러너에서 빌드). Windows는 node.exe.
+const nodeName = process.platform === "win32" ? "node.exe" : "node";
+copyFileSync(process.execPath, resolve(out, nodeName));
+if (process.platform !== "win32") {
+  chmodSync(resolve(out, nodeName), 0o755);
+}
+console.log(`③ Node 바이너리 동봉(${nodeName})`);
 
-// 4. 런처
+// 4. 런처 — 두 OS용을 모두 담는다(빌드된 OS의 것만 실제로 쓰임). QUALIFLOW_HOME 세팅 후 동봉 node로 실행.
 writeFileSync(
   resolve(out, "run.sh"),
   `#!/bin/bash
@@ -60,6 +63,12 @@ mkdir -p "$QUALIFLOW_HOME"
 exec "$DIR/node" "$DIR/agent.mjs" "$@"
 `
 );
-chmodSync(resolve(out, "run.sh"), 0o755);
+if (process.platform !== "win32") {
+  chmodSync(resolve(out, "run.sh"), 0o755);
+}
+writeFileSync(
+  resolve(out, "run.cmd"),
+  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
+);
 
-console.log("✅ 배포 폴더 완성: apps/agent/dist/package/  →  ./run.sh <명령>");
+console.log("✅ 배포 폴더 완성: apps/agent/dist/package/  →  run.sh / run.cmd <명령>");
