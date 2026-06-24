@@ -27,9 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm 버전은 루트 package.json의 packageManager 필드에서 자동 감지(version 명시하면 충돌).
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
