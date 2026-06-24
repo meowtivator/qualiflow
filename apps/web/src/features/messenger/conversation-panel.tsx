@@ -10,9 +10,10 @@ type ConversationPanelProps = {
   channel: Channel;
   qualification?: LeadQualification;
   messages: Message[];
+  selectedThreadId: string;
 };
 
-export function ConversationPanel({ lead, channel, qualification, messages }: ConversationPanelProps) {
+export function ConversationPanel({ lead, channel, qualification, messages, selectedThreadId }: ConversationPanelProps) {
   const orderedMessages = [...messages].sort((a, b) => a.sentAt.localeCompare(b.sentAt));
 
   return (
@@ -40,6 +41,7 @@ export function ConversationPanel({ lead, channel, qualification, messages }: Co
         leadName={lead?.displayName ?? getLeadLabel(lead)}
         qualificationSummary={qualification?.summary}
         recommendedNextAction={qualification?.recommendedNextAction}
+        threadId={selectedThreadId}
       />
     </section>
   );

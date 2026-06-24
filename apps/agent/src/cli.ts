@@ -15,6 +15,7 @@ import { loadLocalEnv } from "./env";
 import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, listChannelThreads, loginAlibaba, sendMessage } from "./fetch";
 import { pair } from "./pair";
 import { pushAllAccounts } from "./push";
+import { serve } from "./serve";
 import { loadToken } from "./token-store";
 
 async function main() {
@@ -231,6 +232,12 @@ async function main() {
       return;
     }
 
+    case "serve": {
+      // 명령 채널 상주 — 웹에서 보낸 발송 명령을 롱폴로 받아 실행(Ctrl-C 종료).
+      await serve();
+      return;
+    }
+
     case "push": {
       // 이미 .data에 있는 정규화 대화를 서버로 올린다(fetch는 별개). 알리바바 원시형태는 건너뜀.
       const results = await pushAllAccounts();
@@ -259,7 +266,8 @@ async function main() {
           "  send <channel> <label> <받는이> <텍스트>   메시지 발송(받는이=me 또는 threadId)",
           "  daemon                              백그라운드 상주 — 주기적 전체 동기화(설치형)",
           "  pair <코드> | status                페어링 / 서버 연결 확인",
-          "  push                                .data의 정규화 대화를 서버로 올리기(인그est)"
+          "  push                                .data의 정규화 대화를 서버로 올리기(인그est)",
+          "  serve                               명령 채널 상주 — 웹에서 보낸 답장을 받아 발송(롱폴)"
         ].join("\n")
       );
   }
