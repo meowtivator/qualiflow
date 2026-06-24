@@ -14,6 +14,7 @@ import { loginTelegram } from "./connectors/telegram";
 import { loadLocalEnv } from "./env";
 import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, listChannelThreads, loginAlibaba, sendMessage } from "./fetch";
 import { pair } from "./pair";
+import { pushAllAccounts } from "./push";
 import { loadToken } from "./token-store";
 
 async function main() {
@@ -230,6 +231,20 @@ async function main() {
       return;
     }
 
+    case "push": {
+      // 이미 .data에 있는 정규화 대화를 서버로 올린다(fetch는 별개). 알리바바 원시형태는 건너뜀.
+      const results = await pushAllAccounts();
+      if (!results.length) {
+        console.log("등록된 계정이 없습니다. 'add <channel> <label>'로 추가하세요.");
+        return;
+      }
+      for (const result of results) {
+        const icon = result.status === "pushed" ? "✅" : result.status === "skipped" ? "⏭️ " : "❌";
+        console.log(`${icon} ${result.channel}/${result.label} — ${result.detail}`);
+      }
+      return;
+    }
+
     default:
       console.log(
         [
@@ -243,7 +258,8 @@ async function main() {
           "  threads <channel> [label]           불러온 대화의 threadId 목록(발송 대상 고르기)",
           "  send <channel> <label> <받는이> <텍스트>   메시지 발송(받는이=me 또는 threadId)",
           "  daemon                              백그라운드 상주 — 주기적 전체 동기화(설치형)",
-          "  pair <코드> | status                (보안 레이어 — 나중)"
+          "  pair <코드> | status                페어링 / 서버 연결 확인",
+          "  push                                .data의 정규화 대화를 서버로 올리기(인그est)"
         ].join("\n")
       );
   }
