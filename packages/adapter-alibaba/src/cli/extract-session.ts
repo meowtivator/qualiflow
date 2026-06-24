@@ -10,13 +10,13 @@
 //   준비: 먼저 pnpm --filter @qualiflow/adapter-alibaba run inquiry:login 으로 로그인.
 //   실행: pnpm --filter @qualiflow/adapter-alibaba run inquiry:extract
 
-import { spawn } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
+import { findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 // 계정별 프로필/출력(에이전트가 QUALIFLOW_ALIBABA_PROFILE / QUALIFLOW_ALIBABA_OUTPUT로 지정). 없으면 기본(하위호환).
 const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
@@ -30,38 +30,6 @@ const OPEN_TIMEOUT_MS = 10_000; // 한 대화를 열고 그 대화 메시지가 
 const POLL_MS = 400; // 폴링 간격
 const MAX_SCROLLS = 60; // 한 대화에서 위로 스크롤하며 옛 메시지를 끌어올 최대 횟수(폭주 방지 상한)
 const SCROLL_WAIT_MS = 800; // 한 번 스크롤한 뒤 옛 메시지가 그려지거나(가상 리스트) 불러와질(지연 로딩) 때까지 대기
-
-const CHROME_CANDIDATES = [
-  process.env.CHROME_PATH,
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium"
-].filter((value): value is string => Boolean(value));
-
-async function findChrome(): Promise<string | null> {
-  for (const candidate of CHROME_CANDIDATES) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // 다음 후보
-    }
-  }
-  return null;
-}
-
-async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) return true;
-    } catch {
-      // 아직 준비 안 됨
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
-  }
-  return false;
-}
 
 const INBOX_READY_TIMEOUT_MS = 40_000; // 대화 목록이 뜰 때까지 최대 대기
 const INBOX_POLL_MS = 500;
@@ -290,17 +258,7 @@ async function main() {
   }
 
   // 자동화 플래그 없는 "그냥 크롬" + inquiry:login 이 만든 영구 프로필.
-  const chrome = spawn(
-    chromePath,
-    [
-      `--user-data-dir=${PROFILE_DIR}`,
-      `--remote-debugging-port=${DEBUG_PORT}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      ONETALK_URL
-    ],
-    { stdio: "ignore" }
-  );
+  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL);
 
   const ready = await waitForCdp(DEBUG_PORT);
   if (!ready) {

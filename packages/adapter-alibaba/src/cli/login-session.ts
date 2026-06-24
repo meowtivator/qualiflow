@@ -17,11 +17,12 @@
 //   (다른 OS면 CHROME_PATH 환경변수로 크롬 실행파일 경로 지정)
 //   (대기 시간 조정: QUALIFLOW_LOGIN_TIMEOUT_MS, 기본 5분)
 
-import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { chromium } from "playwright-core";
+
+import { delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 // 계정별 프로필 경로(에이전트가 QUALIFLOW_ALIBABA_PROFILE로 계정별로 지정). 없으면 기본(하위호환).
 const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
@@ -34,45 +35,6 @@ const CONNECTION_STATUS_FILE = resolve("../../apps/web/.data/alibaba-connection.
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
 const LOGIN_TIMEOUT_MS = Number(process.env.QUALIFLOW_LOGIN_TIMEOUT_MS) || 5 * 60 * 1000;
-
-const CHROME_CANDIDATES = [
-  process.env.CHROME_PATH,
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium"
-].filter((value): value is string => Boolean(value));
-
-async function findChrome(): Promise<string | null> {
-  for (const candidate of CHROME_CANDIDATES) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // 다음 후보
-    }
-  }
-  return null;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
-}
-
-// 크롬 디버그 포트(CDP)가 열릴 때까지 대기.
-async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) {
-        return true;
-      }
-    } catch {
-      // 아직 준비 안 됨
-    }
-    await delay(400);
-  }
-  return false;
-}
 
 // ★로그인 감지: URL만 보면 onetalk을 '여는 순간'의 주소를 로그인됨으로 오인한다(리다이렉트 전 레이스).
 //   그래서 실제로 인박스(대화 목록 .contact-item-container)가 떴는지 CDP로 확인한다.
@@ -159,19 +121,8 @@ if (!chromePath) {
 
 await mkdir(PROFILE_DIR, { recursive: true });
 
-// 자동화 플래그 없이(--enable-automation 안 줌) "그냥 크롬"을 띄운다. --remote-debugging-port는
-// 포트만 여는 거라 navigator.webdriver를 true로 만들지 않는다(= CAPTCHA가 정상 동작).
-const chrome = spawn(
-  chromePath,
-  [
-    `--user-data-dir=${PROFILE_DIR}`,
-    `--remote-debugging-port=${DEBUG_PORT}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    ONETALK_URL
-  ],
-  { stdio: "ignore" }
-);
+// 자동화 플래그 없이 "그냥 크롬"을 띄운다(상세 이유는 chrome-cdp.ts 주석 참고).
+const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL);
 
 console.log("\n순수 크롬 창이 떴어요 — 자동화 흔적이 없어서 슬라이더 CAPTCHA가 정상 동작합니다.");
 console.log("⚠️ '대화가 있는 셀러 계정'으로 직접 로그인하세요(슬라이더도 직접 밀기).");

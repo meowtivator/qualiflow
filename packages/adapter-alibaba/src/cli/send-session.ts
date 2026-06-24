@@ -9,11 +9,12 @@
 //   env: QUALIFLOW_ALIBABA_PROFILE(프로필), QUALIFLOW_ALIBABA_CONVERSATION(data-cid=대화코드),
 //        QUALIFLOW_ALIBABA_TEXT(보낼 텍스트). 정찰용 셀렉터 덮어쓰기: QUALIFLOW_ALIBABA_COMPOSER.
 
-import { spawn } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { chromium, type BrowserContext, type Page } from "playwright-core";
+
+import { delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
 const COOKIES_FILE = `${PROFILE_DIR}.cookies.json`;
@@ -22,52 +23,16 @@ const TEXT = process.env.QUALIFLOW_ALIBABA_TEXT || "";
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
 
-// 입력창 후보(앞에서부터 보이는 것 채택). 정찰로 정확한 셀렉터를 알면 QUALIFLOW_ALIBABA_COMPOSER로 지정.
+// 입력창 후보(보이는 것 중 '가장 아래'를 택해 상단 검색창을 피함). 정확한 셀렉터는 QUALIFLOW_ALIBABA_COMPOSER로
+// 지정하면 findComposer가 우선 사용한다(그래서 여기 배열엔 넣지 않는다).
 const COMPOSER_CANDIDATES = [
-  process.env.QUALIFLOW_ALIBABA_COMPOSER,
   "textarea",
   "div[contenteditable='true']",
   "[contenteditable='true']",
   "[class*='editor'] [contenteditable]",
   "[class*='input'] textarea",
   "[class*='send'] textarea"
-].filter((value): value is string => Boolean(value));
-
-const CHROME_CANDIDATES = [
-  process.env.CHROME_PATH,
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium"
-].filter((value): value is string => Boolean(value));
-
-async function findChrome(): Promise<string | null> {
-  for (const candidate of CHROME_CANDIDATES) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // 다음 후보
-    }
-  }
-  return null;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
-}
-
-async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) return true;
-    } catch {
-      // 아직 준비 안 됨
-    }
-    await delay(400);
-  }
-  return false;
-}
+];
 
 async function injectCookies(context: BrowserContext): Promise<void> {
   try {
@@ -104,9 +69,6 @@ async function findComposer(page: Page): Promise<{ selector: string; index: numb
   }
   let best: { selector: string; index: number; y: number } | null = null;
   for (const selector of COMPOSER_CANDIDATES) {
-    if (selector === override) {
-      continue;
-    }
     const locator = page.locator(selector);
     const count = await locator.count().catch(() => 0);
     for (let index = 0; index < count; index += 1) {
@@ -136,11 +98,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const chrome = spawn(
-    chromePath,
-    [`--user-data-dir=${PROFILE_DIR}`, `--remote-debugging-port=${DEBUG_PORT}`, "--no-first-run", "--no-default-browser-check", ONETALK_URL],
-    { stdio: "ignore" }
-  );
+  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL);
 
   try {
     if (!(await waitForCdp(DEBUG_PORT))) {

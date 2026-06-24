@@ -14,8 +14,6 @@ const AUTH_ROOT = resolve(REPO_ROOT, ".auth");
 const DATA_ROOT = resolve(REPO_ROOT, "apps/web/.data");
 const REGISTRY = resolve(DATA_ROOT, "agent-accounts.json");
 
-export const SUPPORTED_CHANNELS = ["alibaba", "whatsapp", "telegram", "instagram"] as const;
-
 export type Account = {
   channel: string;
   label: string;
