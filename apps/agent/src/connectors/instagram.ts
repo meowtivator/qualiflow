@@ -96,6 +96,26 @@ function spawnChrome(profileDir: string, chromePath: string): ChildProcess {
   );
 }
 
+// IG가 "계속(Continue as …)" 원탭 재인증 화면(/accounts/login)을 띄우면(계정은 기억됨) 눌러서
+// 세션을 되살린다. 이게 안 뜨거나(완전 로그아웃) 2FA면 그대로 두고, 이후 단계에서 처리한다.
+async function tryOneTapContinue(page: Page): Promise<void> {
+  await delay(2500); // 초기 로드/리다이렉트 대기
+  if (!/\/accounts\/login/.test(page.url())) {
+    return;
+  }
+  const button = page
+    .locator(
+      'button:has-text("계속"), button:has-text("Continue"), [role="button"]:has-text("계속"), [role="button"]:has-text("Continue")'
+    )
+    .first();
+  if (await button.isVisible().catch(() => false)) {
+    console.log("인스타 '계속' 재인증 화면 감지 — 눌러서 세션 복구를 시도합니다...");
+    await button.click().catch(() => undefined);
+    await page.waitForURL((url) => !/\/accounts\/login/.test(url.href), { timeout: 15_000 }).catch(() => undefined);
+    await delay(2000);
+  }
+}
+
 // 브라우저를 띄워 로그인된 페이지에 접근하는 공통 골격. fn 안에서 page로 작업한다.
 async function withInstagramPage<T>(profileDir: string, fn: (page: Page) => Promise<T>): Promise<T> {
   const chromePath = await findChrome();
@@ -108,6 +128,7 @@ async function withInstagramPage<T>(profileDir: string, fn: (page: Page) => Prom
     try {
       const context = browser.contexts()[0];
       const page = context.pages()[0] ?? (await context.newPage());
+      await tryOneTapContinue(page); // "계속" 재인증 화면이면 눌러 세션 복구
       return await fn(page);
     } finally {
       await browser.close().catch(() => undefined); // connectOverCDP는 close=연결 해제(크롬 안 죽임)
@@ -218,7 +239,13 @@ export async function sendInstagram(profileDir: string, threadId: string, text: 
   })()`;
 
   await withInstagramPage(profileDir, async (page) => {
-    await delay(2500); // 페이지/세션 로드 대기
+    await delay(1500); // 페이지/세션 로드 대기
+    // 로그인 페이지에 발송 POST를 쏘지 않는다 — 세션이 살아있는지 인박스 API로 먼저 확인.
+    if (!(await callInbox(page))?.inbox) {
+      throw new Error(
+        "인스타 세션이 만료됐어요('계속' 화면 자동 복구 실패). 'login instagram <라벨>'로 재로그인 후 다시 보내세요."
+      );
+    }
     const result = (await page.evaluate(script).catch((error) => `evaluate-error:${String(error)}`)) as string;
     if (!result.startsWith("ok")) {
       throw new Error(`Instagram 발송 실패: ${result}`);

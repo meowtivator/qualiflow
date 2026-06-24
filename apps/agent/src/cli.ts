@@ -62,6 +62,33 @@ async function main() {
       return;
     }
 
+    case "login": {
+      // 등록은 건드리지 않고 세션만 다시 연다(만료된 브라우저 세션 복구용).
+      const channel = args[1];
+      const rawLabel = args[2];
+      if (!channel || !rawLabel) {
+        console.error("사용법: login <channel> <label>  — 등록은 그대로, 세션만 다시 열기(만료 복구)");
+        process.exitCode = 1;
+        return;
+      }
+      const label = sanitizeLabel(rawLabel);
+      if (channel === "alibaba") {
+        await loginAlibaba(sessionPath("alibaba", label));
+      } else if (channel === "instagram") {
+        await loginInstagram(sessionPath("instagram", label));
+      } else if (channel === "telegram") {
+        await loginTelegram(sessionPath("telegram", label));
+      } else if (channel === "whatsapp") {
+        await fetchWhatsAppInbox(label); // QR 재연동
+      } else {
+        console.error("지원 채널: alibaba | instagram | telegram | whatsapp");
+        process.exitCode = 1;
+        return;
+      }
+      console.log(`✅ ${channel}/${label} 세션을 다시 열었습니다.`);
+      return;
+    }
+
     case "remove": {
       const channel = args[1];
       const label = args[2];
@@ -177,6 +204,7 @@ async function main() {
           "QualiFlow agent — 명령:",
           "  accounts                            등록된 계정 목록",
           "  add <channel> <label>               계정 추가(로그인/QR)",
+          "  login <channel> <label>             세션만 다시 열기(만료 복구, 등록 유지)",
           "  remove <channel> <label>            계정 삭제(세션·데이터)",
           "  fetch <channel> [label] [--cached]  인박스 긁기 → 정규화",
           "  fetch all [--cached]                등록된 모든 계정 한 번에 → 합산 요약",
