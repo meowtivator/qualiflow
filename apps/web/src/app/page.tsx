@@ -5,6 +5,7 @@ import { AgentConnector, type AgentRow } from "@/features/agents/agent-connector
 import { ConnectorSettings } from "@/features/connectors/connector-settings";
 import { MessengerWorkspace } from "@/features/messenger/messenger-workspace";
 import { loadConversationSource } from "@/lib/conversation-source";
+import { loadConversationSourceFromDb } from "@/lib/supabase-conversation-source";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -227,7 +228,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   }
 
   const selectedThreadParam = Array.isArray(params?.thread) ? params.thread[0] : params?.thread;
-  const source = await loadConversationSource();
+  // 로그인 사용자의 워크스페이스 DB를 우선 읽고(에이전트가 ingest로 채운 데이터), 없으면 .data/mock으로 폴백.
+  const source = (await loadConversationSourceFromDb()) ?? (await loadConversationSource());
   const [leadPage, threadPage] = await Promise.all([
     source.adapter.listLeads?.(),
     source.adapter.listThreads()
