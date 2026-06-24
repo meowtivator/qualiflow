@@ -197,21 +197,32 @@ export async function sendInstagram(profileDir: string, threadId: string, text: 
       body.set("_csrftoken", csrf);
       var res = await fetch("/api/v1/direct_v2/threads/broadcast/text/", {
         method: "POST",
-        headers: { "X-IG-App-ID": "${IG_APP_ID}", "X-CSRFToken": csrf, "content-type": "application/x-www-form-urlencoded" },
+        headers: {
+          "X-IG-App-ID": "${IG_APP_ID}",
+          "X-CSRFToken": csrf,
+          "X-Requested-With": "XMLHttpRequest",
+          "content-type": "application/x-www-form-urlencoded"
+        },
         credentials: "include",
         body: body.toString()
       });
-      if (res.ok) return "ok";
-      return "fail:" + res.status + ":" + (await res.text()).slice(0, 200);
+      var bodyText = await res.text();
+      var json = null;
+      try { json = JSON.parse(bodyText); } catch (e2) {}
+      // ★200(res.ok)만으로 성공으로 보면 안 된다 — 본문 status가 "ok"여야 실제 전송됨.
+      if (res.ok && json && json.status === "ok") {
+        return "ok:" + ((json.payload && json.payload.item_id) || "sent");
+      }
+      return "fail:" + res.status + ":" + bodyText.slice(0, 300);
     } catch (e) { return "error:" + (e && e.message ? e.message : String(e)); }
   })()`;
 
   await withInstagramPage(profileDir, async (page) => {
     await delay(2500); // 페이지/세션 로드 대기
     const result = (await page.evaluate(script).catch((error) => `evaluate-error:${String(error)}`)) as string;
-    if (result !== "ok") {
+    if (!result.startsWith("ok")) {
       throw new Error(`Instagram 발송 실패: ${result}`);
     }
-    console.log(`📤 Instagram 발송 완료 → thread ${threadId}`);
+    console.log(`📤 Instagram 발송 완료 → thread ${threadId} (${result})`);
   });
 }

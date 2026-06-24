@@ -320,11 +320,15 @@ export async function sendWhatsApp(options: { authDir?: string; to: string; text
 
   await new Promise<void>((resolveSend, rejectSend) => {
     let settled = false;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     const done = (error?: Error): void => {
       if (settled) {
         return;
       }
       settled = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle); // ★이걸 안 지우면 발송 후에도 타이머가 살아 터미널을 계속 점유
+      }
       restoreConsole();
       if (error) {
         rejectSend(error);
@@ -373,6 +377,6 @@ export async function sendWhatsApp(options: { authDir?: string; to: string; text
       }
     });
 
-    setTimeout(() => done(new Error("WhatsApp 발송 타임아웃(연결 실패).")), 60_000);
+    timeoutHandle = setTimeout(() => done(new Error("WhatsApp 발송 타임아웃(연결 실패).")), 60_000);
   });
 }
