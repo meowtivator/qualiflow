@@ -9,6 +9,7 @@
     "accounts": "tsx ./src/cli.ts accounts",
     "status": "tsx ./src/cli.ts status",
     "bundle": "node build.mjs",
+    "package": "node package-app.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

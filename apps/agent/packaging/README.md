@@ -42,10 +42,33 @@ node apps/agent/dist/agent.mjs fetch all   # 등
   실제 설치본에선 *홈 디렉터리/설정 경로* 기준으로 바꿔야 한다.
 - Node 런타임은 여전히 필요(`.mjs` 실행). 완전 무-Node 단일 바이너리는 Node SEA 단계.
 
+## 배포 폴더 (A안: 번들 + Node 동봉) — 됨
+
+```bash
+pnpm --filter @qualiflow/agent package     # → apps/agent/dist/package/ (~175MB)
+apps/agent/dist/package/run.sh accounts    # 레포·pnpm·시스템 Node 없이 실행
+```
+
+폴더 구성(이게 "설치되는 실체"):
+```
+dist/package/
+  node           # Node 바이너리 동봉 → 시스템 Node 불필요(같은 OS/arch)
+  agent.mjs      # esbuild 번들(에이전트 + 워크스페이스 + telegram)
+  node_modules/  # external(playwright-core, baileys) + 전이 의존성
+  run.sh         # QUALIFLOW_HOME=~/.qualiflow 세팅 후 ./node agent.mjs 실행
+```
+- **데이터/세션은 `QUALIFLOW_HOME`(기본 `~/.qualiflow`)** 에 쌓인다 → 레포 밖에서 동작.
+- **실행 방식**: 사용자가 더블클릭 안 함. 설치마법사가 이 폴더를 숨겨진 위치에 복사 + launchd에
+  `run.sh daemon`을 등록 → 백그라운드 상주. (이 macOS launchd install.sh는 *dev(레포)* 용; 배포본은
+  설치마법사가 같은 launchd 등록을 패키지 경로로.)
+
 ## 다음 단계 (로드맵)
 
-1. **Node SEA로 진짜 단일 바이너리** — 위 번들을 Node 실행파일에 임베드 + 네이티브(baileys/playwright)
-   동봉. 경로도 설치 위치 기준으로. (헤드리스 데몬이라 Electron 불필요.)
+1. **설치마법사(.dmg/.pkg)** — 위 `dist/package`를 숨겨진 위치(예: `~/Library/Application Support/QualiFlow`)에
+   복사 + launchd 등록(`run.sh daemon`) + 서명 우회 안내. (원하면 폴더를 `.app` 구조로 감싸 아이콘 1개로.)
+2. **Windows** — 같은 패키지(`node.exe` + agent.mjs + node_modules) + 작업 스케줄러 등록 + SmartScreen 우회.
+3. **본인 VPS 연결(서버단)** — 데몬이 바깥으로 상시 연결 → 명령 수신 + 데이터 push → 프론트 표시.
+4. (선택) **Node SEA** — 진짜 단일 실행파일이 꼭 필요하면. 네이티브 동봉·서명 난관 있음(A안으로 충분하면 생략).
 2. **크로스플랫폼 설치본(서명 우회)** — macOS `.dmg/.app`, Windows `.exe/.msi`. **코드 서명 없이** 배포하고,
    첫 실행 시 OS 보안경고를 우회하는 안내를 동봉:
    - macOS: 우클릭 → "열기"(Gatekeeper 우회), 또는 `xattr -dr com.apple.quarantine <앱>`.
