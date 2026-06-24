@@ -96,23 +96,39 @@ function spawnChrome(profileDir: string, chromePath: string): ChildProcess {
   );
 }
 
-// IG가 "계속(Continue as …)" 원탭 재인증 화면(/accounts/login)을 띄우면(계정은 기억됨) 눌러서
-// 세션을 되살린다. 이게 안 뜨거나(완전 로그아웃) 2FA면 그대로 두고, 이후 단계에서 처리한다.
-async function tryOneTapContinue(page: Page): Promise<void> {
-  await delay(2500); // 초기 로드/리다이렉트 대기
-  if (!/\/accounts\/login/.test(page.url())) {
-    return;
+// 텍스트가 맞는 첫 클릭가능 요소(버튼/링크/role=button)를 누른다.
+async function clickByText(page: Page, texts: string[]): Promise<boolean> {
+  for (const label of texts) {
+    const target = page
+      .locator(`button:has-text("${label}"), a:has-text("${label}"), [role="button"]:has-text("${label}")`)
+      .first();
+    if (await target.isVisible().catch(() => false)) {
+      await target.click().catch(() => undefined);
+      return true;
+    }
   }
-  const button = page
-    .locator(
-      'button:has-text("계속"), button:has-text("Continue"), [role="button"]:has-text("계속"), [role="button"]:has-text("Continue")'
-    )
-    .first();
-  if (await button.isVisible().catch(() => false)) {
-    console.log("인스타 '계속' 재인증 화면 감지 — 눌러서 세션 복구를 시도합니다...");
-    await button.click().catch(() => undefined);
-    await page.waitForURL((url) => !/\/accounts\/login/.test(url.href), { timeout: 15_000 }).catch(() => undefined);
-    await delay(2000);
+  return false;
+}
+
+// IG 로그인 인터스티셜을 순서대로 넘긴다(세션이 기억된 경우):
+//   /accounts/login  → "계속(Continue as …)"  (원탭 재인증)
+//   /accounts/onetap → "나중에 하기(Not now)"  ("로그인 정보 저장?" 모달)
+// 인박스로 들어가면 종료. 완전 로그아웃(2FA/비번 필요)이면 그대로 두고 이후 단계서 처리.
+async function tryOneTapContinue(page: Page): Promise<void> {
+  for (let step = 0; step < 4; step += 1) {
+    await delay(2500);
+    const url = page.url();
+    if (/\/accounts\/login/.test(url)) {
+      if (!(await clickByText(page, ["계속", "Continue"]))) {
+        return; // 버튼 없음 = 완전 로그아웃 → 재로그인 필요
+      }
+      console.log("인스타 '계속' 재인증 — 클릭");
+    } else if (/\/accounts\/onetap/.test(url)) {
+      await clickByText(page, ["나중에 하기", "Not now", "Not Now"]);
+      console.log("인스타 '로그인 정보 저장?' 모달 — 나중에 하기");
+    } else {
+      return; // 인증 인터스티셜을 벗어남(인박스 도달)
+    }
   }
 }
 
