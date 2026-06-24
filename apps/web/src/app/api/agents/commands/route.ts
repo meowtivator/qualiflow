@@ -6,19 +6,12 @@
 
 import { NextResponse } from "next/server";
 
+import { agentTokenErrorResponse, bearerToken } from "@/lib/agents/agent-request";
 import { hmacHash, isPairingConfigured } from "@/lib/agents/pairing";
 import { createClient } from "@/lib/supabase/server";
 
 const LONG_POLL_MS = 25_000;
 const POLL_INTERVAL_MS = 2_000;
-
-function bearerToken(request: Request): string | null {
-  const header = request.headers.get("authorization") ?? "";
-  if (!header.startsWith("Bearer ")) {
-    return null;
-  }
-  return header.slice("Bearer ".length).trim() || null;
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,11 +33,7 @@ export async function GET(request: Request) {
   for (;;) {
     const { data, error } = await supabase.rpc("claim_agent_commands", { p_token_hash: tokenHash, p_limit: 10 });
     if (error) {
-      const invalid = error.message?.includes("invalid agent token");
-      return NextResponse.json(
-        { ok: false, message: invalid ? "유효하지 않은 에이전트 토큰입니다." : "명령 조회 실패." },
-        { status: invalid ? 401 : 400 }
-      );
+      return agentTokenErrorResponse(error, "명령 조회 실패.");
     }
     const commands = Array.isArray(data) ? data : [];
     if (commands.length > 0 || Date.now() >= deadline) {
@@ -91,11 +80,7 @@ export async function POST(request: Request) {
     p_result: result
   });
   if (error) {
-    const invalid = error.message?.includes("invalid agent token");
-    return NextResponse.json(
-      { ok: false, message: invalid ? "유효하지 않은 에이전트 토큰입니다." : "결과 보고 실패." },
-      { status: invalid ? 401 : 400 }
-    );
+    return agentTokenErrorResponse(error, "결과 보고 실패.");
   }
   return NextResponse.json({ ok: true, updated: data === true });
 }

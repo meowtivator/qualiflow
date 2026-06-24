@@ -81,7 +81,7 @@ async function readAllConversations<TItem>(channel: string): Promise<TItem[] | n
   return all.length > 0 ? all : null;
 }
 
-function resolveChannel(channelId: string): Channel {
+export function resolveChannel(channelId: string): Channel {
   return channelId in BUILT_IN_CHANNELS ? BUILT_IN_CHANNELS[channelId as BuiltInChannelId] : BUILT_IN_CHANNELS.manual;
 }
 
