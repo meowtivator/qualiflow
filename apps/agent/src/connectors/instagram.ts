@@ -209,18 +209,24 @@ export async function sendInstagram(profileDir: string, threadId: string, text: 
   const script = `(async () => {
     try {
       var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
-      var ctx = String(Date.now()) + "_" + Math.floor(Math.random() * 1e9);
+      // IG 웹은 idempotency용으로 숫자 컨텍스트를 쓴다(언더스코어 없는 큰 숫자).
+      var ctx = String(Date.now()) + String(Math.floor(Math.random() * 1000000));
       var body = new URLSearchParams();
       body.set("action", "send_item");
+      body.set("send_attribution", "direct_thread");
       body.set("thread_ids", "[" + ${JSON.stringify(threadId)} + "]");
-      body.set("client_context", ctx);
       body.set("text", ${JSON.stringify(text)});
+      body.set("offline_threading_id", ctx);
+      body.set("client_context", ctx);
+      body.set("mutation_token", ctx);
       body.set("_csrftoken", csrf);
       var res = await fetch("/api/v1/direct_v2/threads/broadcast/text/", {
         method: "POST",
         headers: {
           "X-IG-App-ID": "${IG_APP_ID}",
           "X-CSRFToken": csrf,
+          "X-ASBD-ID": "129477",
+          "X-IG-WWW-Claim": "0",
           "X-Requested-With": "XMLHttpRequest",
           "content-type": "application/x-www-form-urlencoded"
         },
@@ -234,7 +240,9 @@ export async function sendInstagram(profileDir: string, threadId: string, text: 
       if (res.ok && json && json.status === "ok") {
         return "ok:" + ((json.payload && json.payload.item_id) || "sent");
       }
-      return "fail:" + res.status + ":" + bodyText.slice(0, 300);
+      // 진단: 리다이렉트 여부 + 최종 URL이 핵심(로그인으로 튀었는지 vs 엔드포인트 문제인지).
+      var kind = json ? ("json:" + JSON.stringify(json).slice(0, 200)) : ("html:" + bodyText.slice(0, 120));
+      return "fail status=" + res.status + " redirected=" + res.redirected + " url=" + res.url + " " + kind;
     } catch (e) { return "error:" + (e && e.message ? e.message : String(e)); }
   })()`;
 
