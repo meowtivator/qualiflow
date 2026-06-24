@@ -47,10 +47,15 @@ export async function waitForCdp(port: number, timeoutMs = 20_000): Promise<bool
   return false;
 }
 
+// 'Headless' 표시를 뗀 일반 Chrome UA(탐지 완화). 버전이 안 맞으면 QUALIFLOW_CHROME_UA로 덮어쓴다.
+const CHROME_UA =
+  process.env.QUALIFLOW_CHROME_UA ||
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+
 // 자동화 플래그 없는 "그냥 크롬"을 영구 프로필 + 원격디버깅 포트로 띄운다(--remote-debugging-port는
 // 포트만 여는 거라 navigator.webdriver를 true로 만들지 않는다 = CAPTCHA가 정상 동작).
-//   offscreen=true: 창을 화면 밖으로 보내 사용자에게 안 보이게 한다(fetch/send용). 로그인은 사용자가
-//   직접 해야 하므로 offscreen을 주지 않는다. QUALIFLOW_SHOW_BROWSER=1 이면 디버깅용으로 항상 보인다.
+//   offscreen=true: 창을 띄우지 않는다(fetch/send용 — 사용자에게 안 보임). 로그인은 사용자가 직접
+//   해야 하므로 offscreen을 주지 않는다. QUALIFLOW_SHOW_BROWSER=1 이면 디버깅용으로 창을 띄운다.
 export function spawnChrome(
   chromePath: string,
   profileDir: string,
@@ -65,8 +70,9 @@ export function spawnChrome(
     "--no-default-browser-check"
   ];
   if (options.offscreen && process.env.QUALIFLOW_SHOW_BROWSER !== "1") {
-    // 화면 밖 위치 + 정상 크기(페이지는 정상 렌더 = React/DOM 그대로, 창만 안 보임). CDP 자동화는 위치 무관.
-    args.push("--window-position=-32000,-32000", "--window-size=1280,800");
+    // ★macOS는 --window-position으로 창을 못 숨긴다(화면 안으로 되돌림). headless=new면 창이 아예 없고,
+    //   페이지는 그대로 렌더돼 React 상태/페이지 평가가 동작한다. UA는 'Headless' 표시를 떼 탐지를 줄인다.
+    args.push("--headless=new", `--user-agent=${CHROME_UA}`);
   }
   args.push(url);
   return spawn(chromePath, args, { stdio: "ignore" });

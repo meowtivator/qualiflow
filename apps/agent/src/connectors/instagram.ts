@@ -82,8 +82,9 @@ async function callInbox(page: Page): Promise<IgInbox | null> {
   return (result as IgInbox | null) ?? null;
 }
 
-// offscreen=true: 창을 화면 밖으로(사용자 안 보임, fetch/send용). 로그인은 보여야 하므로 false.
-//   QUALIFLOW_SHOW_BROWSER=1 이면 디버깅용으로 항상 보인다.
+// offscreen=true: 창을 아예 안 띄운다(사용자 안 보임, fetch/send용). 로그인은 보여야 하므로 false.
+//   ★macOS는 --window-position으로 창을 못 숨겨서 headless=new를 쓴다(페이지는 그대로 렌더됨).
+//   UA는 'Headless' 표시를 떼 탐지를 줄인다(QUALIFLOW_CHROME_UA로 덮어쓰기 가능). SHOW_BROWSER=1이면 창 표시.
 function spawnChrome(profileDir: string, chromePath: string, offscreen: boolean): ChildProcess {
   const args = [
     `--user-data-dir=${profileDir}`,
@@ -92,7 +93,10 @@ function spawnChrome(profileDir: string, chromePath: string, offscreen: boolean)
     "--no-default-browser-check"
   ];
   if (offscreen && process.env.QUALIFLOW_SHOW_BROWSER !== "1") {
-    args.push("--window-position=-32000,-32000", "--window-size=1280,800");
+    const ua =
+      process.env.QUALIFLOW_CHROME_UA ||
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+    args.push("--headless=new", `--user-agent=${ua}`);
   }
   args.push(INBOX_URL);
   return spawn(chromePath, args, { stdio: "ignore" });
