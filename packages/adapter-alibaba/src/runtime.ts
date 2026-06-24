@@ -1,0 +1,8 @@
+// Node 전용 런타임 진입점 — Playwright/CDP/child_process를 쓰는 알리바바 함수들을 모아 export한다.
+// ★index.ts(순수: 브라우저/서버 번들 가능)와 분리한다. 웹앱은 index만 import하므로 Playwright가
+//   웹 번들로 새지 않는다. 로컬 에이전트(Node)만 이 runtime 진입점을 import해 함수로 직접 호출한다.
+//   (예전엔 에이전트가 이 로직을 `pnpm --filter ... inquiry:*` 서브프로세스로 불렀다 → 함수 호출로 통일.)
+
+export { loginAlibaba } from "./cli/login-session";
+export { extractAlibaba } from "./cli/extract-session";
+export { sendAlibaba } from "./cli/send-session";

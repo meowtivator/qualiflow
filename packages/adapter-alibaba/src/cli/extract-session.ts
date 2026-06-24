@@ -12,17 +12,13 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
 import { findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
-// 계정별 프로필/출력(에이전트가 QUALIFLOW_ALIBABA_PROFILE / QUALIFLOW_ALIBABA_OUTPUT로 지정). 없으면 기본(하위호환).
-const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
-// login이 백업한 세션 쿠키(프로필만으론 세션 쿠키가 안 남아서). 있으면 goto 전에 주입한다.
-const COOKIES_FILE = `${PROFILE_DIR}.cookies.json`;
-const OUTPUT_PATH = process.env.QUALIFLOW_ALIBABA_OUTPUT || resolve("../../apps/web/.data/alibaba-conversations.json");
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
 const MAX_CONVERSATIONS = 30;
@@ -249,23 +245,21 @@ function buildReadRowProfileImageScript(cid: string | null, index: number) {
   `;
 }
 
-async function main() {
+// 인박스를 긁어 AlibabaRawConversation[]를 반환한다(파일 쓰기·프로세스 종료 없음 — 호출부가 결정).
+// 에이전트가 서브프로세스 없이 함수로 직접 부른다. 치명적 상황은 throw.
+export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConversation[]> {
+  const cookiesFile = `${profileDir}.cookies.json`; // login이 백업한 세션 쿠키
   const chromePath = await findChrome();
   if (!chromePath) {
-    console.error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
-    process.exitCode = 1;
-    return;
+    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
   }
 
-  // 자동화 플래그 없는 "그냥 크롬" + inquiry:login 이 만든 영구 프로필.
-  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL, { offscreen: true });
+  // 자동화 플래그 없는 "그냥 크롬" + inquiry:login 이 만든 영구 프로필(화면 밖).
+  const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, ONETALK_URL, { offscreen: true });
 
-  const ready = await waitForCdp(DEBUG_PORT);
-  if (!ready) {
-    console.error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 떠 있으면 닫고 다시 시도하세요.");
+  if (!(await waitForCdp(DEBUG_PORT))) {
     chrome.kill("SIGTERM");
-    process.exitCode = 1;
-    return;
+    throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 떠 있으면 닫고 다시 시도하세요.");
   }
 
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
@@ -273,7 +267,7 @@ async function main() {
   const page = context.pages()[0] ?? (await context.newPage());
 
   // ★goto 전에 login이 백업한 세션 쿠키를 주입한다(프로필만으론 세션 쿠키가 사라져 로그인 페이지로 튐).
-  const injected = await injectSessionCookies(context, COOKIES_FILE);
+  const injected = await injectSessionCookies(context, cookiesFile);
   if (injected) {
     console.log(`백업 세션 쿠키 ${injected}개 주입(프로필 + 쿠키 이중 보강).`);
   }
@@ -283,11 +277,9 @@ async function main() {
   // 세션 유효 + 인박스 로딩을 폴링으로 확인(URL만 보던 성급한 만료 오판 제거).
   const inboxState = await waitForInbox(page);
   if (inboxState === "login") {
-    console.error("세션이 만료된 것 같아요(로그인 페이지에 계속 머무름). 다시 'add alibaba <라벨>'로 로그인하세요.");
     await browser.close();
     chrome.kill("SIGTERM");
-    process.exitCode = 1;
-    return;
+    throw new Error("세션이 만료된 것 같아요(로그인 페이지에 계속 머무름). 다시 'add alibaba <라벨>'로 로그인하세요.");
   }
   if (inboxState === "timeout") {
     console.log("⏳ 대화 목록이 시간 내에 안 떴어요(대화가 없거나 로딩이 느림) — 그래도 추출을 시도합니다.");
@@ -398,16 +390,30 @@ async function main() {
 
   await browser.close();
   chrome.kill("SIGTERM");
-
-  if (!conversations.length) {
-    console.error("추출된 대화가 없습니다. 대화를 하나 연 상태로 다시 시도하거나, 목록 셀렉터를 점검하세요.");
-    process.exitCode = 1;
-    return;
-  }
-
-  await mkdir(dirname(OUTPUT_PATH), { recursive: true });
-  await writeFile(OUTPUT_PATH, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
-  console.log(`대화 ${conversations.length}개를 저장했습니다: ${OUTPUT_PATH}`);
+  return conversations;
 }
 
-await main();
+// CLI 래퍼: 환경변수로 받아 extractAlibaba 실행 → 파일 저장(standalone inquiry:extract 용).
+async function main() {
+  const profileDir = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
+  const outputPath = process.env.QUALIFLOW_ALIBABA_OUTPUT || resolve("../../apps/web/.data/alibaba-conversations.json");
+  try {
+    const conversations = await extractAlibaba(profileDir);
+    if (!conversations.length) {
+      console.error("추출된 대화가 없습니다. 대화를 하나 연 상태로 다시 시도하거나, 목록 셀렉터를 점검하세요.");
+      process.exitCode = 1;
+      return;
+    }
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
+    console.log(`대화 ${conversations.length}개를 저장했습니다: ${outputPath}`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}
+
+// 이 파일을 직접 실행할 때만 CLI 동작(에이전트가 함수로 import할 땐 안 돈다).
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await main();
+}

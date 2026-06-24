@@ -1,13 +1,16 @@
 // 채널 커넥터 실행 → 정규화 → 요약. 계정별 세션/출력 경로를 써서 다계정을 지원한다.
-//   alibaba  : 브라우저 RE(inquiry:extract)를 그대로 호출(로직 미변경). 계정별 프로필/출력은 env로 전달.
+//   alibaba  : 브라우저 RE를 함수로 직접 호출(@qualiflow/adapter-alibaba/runtime). 계정별 프로필 인자로 전달.
 //   whatsapp : Baileys(connectors/whatsapp.ts). 계정별 authDir/outputFile 전달.
 
-import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 
 import { createAlibabaAdapterFromConversations, type AlibabaRawConversation } from "@qualiflow/adapter-alibaba";
+import {
+  extractAlibaba,
+  loginAlibaba as runLoginAlibaba,
+  sendAlibaba as runSendAlibaba
+} from "@qualiflow/adapter-alibaba/runtime";
 import { createChatAdapter, type ChatRawConversation } from "@qualiflow/adapter-chat";
 import type { ConversationAdapter } from "@qualiflow/core";
 
@@ -15,9 +18,6 @@ import { dataFile, listAccounts, sessionPath } from "./accounts";
 import { fetchInstagram, sendInstagram } from "./connectors/instagram";
 import { fetchTelegram, sendTelegram } from "./connectors/telegram";
 import { fetchWhatsApp, sendWhatsApp } from "./connectors/whatsapp";
-
-const here = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(here, "../../..");
 
 export type FetchSummary = {
   channel: string;
@@ -76,62 +76,24 @@ async function summarize(
   return { channel, label, conversationCount, leadCount: leads.length, threadCount: threads.length, messageCount, sample };
 }
 
-// 알리바바 RE를 계정별 프로필/출력으로 실행한다(로직 미변경, env로 경로만 주입).
-function runAlibabaExtractor(profile: string, output: string): Promise<void> {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn("pnpm", ["--filter", "@qualiflow/adapter-alibaba", "inquiry:extract"], {
-      cwd: REPO_ROOT,
-      stdio: "inherit",
-      env: { ...process.env, QUALIFLOW_ALIBABA_PROFILE: profile, QUALIFLOW_ALIBABA_OUTPUT: output }
-    });
-    child.on("error", rejectRun);
-    child.on("exit", (code) =>
-      code === 0 ? resolveRun() : rejectRun(new Error(`추출기 종료 코드 ${code} (세션 만료면 'add alibaba <라벨>'로 재로그인)`))
-    );
-  });
-}
-
-// 알리바바 로그인(inquiry:login)을 계정별 프로필로 실행한다(add 시 사용).
+// 알리바바 로그인을 계정별 프로필로 실행한다(add 시 사용). runtime 함수에 위임(서브프로세스 아님).
 export function loginAlibaba(profile: string): Promise<void> {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn("pnpm", ["--filter", "@qualiflow/adapter-alibaba", "inquiry:login"], {
-      cwd: REPO_ROOT,
-      stdio: "inherit",
-      env: { ...process.env, QUALIFLOW_ALIBABA_PROFILE: profile }
-    });
-    child.on("error", rejectRun);
-    child.on("exit", (code) => (code === 0 ? resolveRun() : rejectRun(new Error(`로그인 종료 코드 ${code}`))));
-  });
-}
-
-// 알리바바 발송(inquiry:send)을 계정별 프로필 + 대화코드 + 텍스트로 실행한다(브라우저 자동화).
-function sendAlibaba(profile: string, conversation: string, text: string): Promise<void> {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn("pnpm", ["--filter", "@qualiflow/adapter-alibaba", "inquiry:send"], {
-      cwd: REPO_ROOT,
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        QUALIFLOW_ALIBABA_PROFILE: profile,
-        QUALIFLOW_ALIBABA_CONVERSATION: conversation,
-        QUALIFLOW_ALIBABA_TEXT: text
-      }
-    });
-    child.on("error", rejectRun);
-    child.on("exit", (code) => (code === 0 ? resolveRun() : rejectRun(new Error(`발송 종료 코드 ${code}`))));
-  });
+  return runLoginAlibaba(profile);
 }
 
 export async function fetchAlibaba(label: string, options: { cached: boolean }): Promise<FetchSummary> {
   const profile = sessionPath("alibaba", label);
   const output = dataFile("alibaba", label);
+  let raw: AlibabaRawConversation[];
   if (options.cached) {
     console.log("🗂  --cached: 이미 추출된 데이터를 읽습니다(RE 미실행).");
+    raw = JSON.parse(await readFile(output, "utf8")) as AlibabaRawConversation[];
   } else {
     console.log(`🔌 알리바바(${label}) 커넥터 실행 — 전용 크롬으로 인박스를 읽습니다...`);
-    await runAlibabaExtractor(profile, output);
+    raw = await extractAlibaba(profile); // 함수 직접 호출 → 대화 반환
+    await mkdir(dirname(output), { recursive: true });
+    await writeFile(output, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
   }
-  const raw = JSON.parse(await readFile(output, "utf8")) as AlibabaRawConversation[];
   return summarize("alibaba", label, raw.length, createAlibabaAdapterFromConversations(raw));
 }
 
@@ -245,7 +207,7 @@ export async function sendMessage(channel: string, label: string, recipient: str
       if (recipient === "me") {
         throw new Error("알리바바는 'me' 발송이 없습니다. 불러온 대화의 threadId(대화코드)를 쓰세요.");
       }
-      return sendAlibaba(sessionPath("alibaba", label), recipient, text);
+      return runSendAlibaba(sessionPath("alibaba", label), recipient, text);
     default:
       throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram.`);
   }

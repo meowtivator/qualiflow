@@ -11,15 +11,12 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 
 import { delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
-const PROFILE_DIR = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
-const COOKIES_FILE = `${PROFILE_DIR}.cookies.json`;
-const CONVERSATION = process.env.QUALIFLOW_ALIBABA_CONVERSATION || "";
-const TEXT = process.env.QUALIFLOW_ALIBABA_TEXT || "";
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
 
@@ -34,9 +31,9 @@ const COMPOSER_CANDIDATES = [
   "[class*='send'] textarea"
 ];
 
-async function injectCookies(context: BrowserContext): Promise<void> {
+async function injectCookies(context: BrowserContext, cookiesFile: string): Promise<void> {
   try {
-    const cookies = JSON.parse(await readFile(COOKIES_FILE, "utf8")) as Parameters<BrowserContext["addCookies"]>[0];
+    const cookies = JSON.parse(await readFile(cookiesFile, "utf8")) as Parameters<BrowserContext["addCookies"]>[0];
     if (Array.isArray(cookies) && cookies.length) {
       await context.addCookies(cookies);
       console.log(`백업 세션 쿠키 ${cookies.length}개 주입.`);
@@ -85,46 +82,38 @@ async function findComposer(page: Page): Promise<{ selector: string; index: numb
   return best ? { selector: best.selector, index: best.index } : null;
 }
 
-async function main(): Promise<void> {
-  if (!CONVERSATION || !TEXT) {
-    console.error("QUALIFLOW_ALIBABA_CONVERSATION(대화코드)과 QUALIFLOW_ALIBABA_TEXT(텍스트)가 필요합니다.");
-    process.exitCode = 1;
-    return;
+// 지정한 대화를 열어 입력창에 타이핑 후 전송한다. 에이전트가 함수로 직접 부른다. 실패는 throw.
+export async function sendAlibaba(profileDir: string, conversation: string, text: string): Promise<void> {
+  if (!conversation || !text) {
+    throw new Error("발송할 대화코드(conversation)와 텍스트가 필요합니다.");
   }
+  const cookiesFile = `${profileDir}.cookies.json`;
   const chromePath = await findChrome();
   if (!chromePath) {
-    console.error("Chrome 실행파일을 못 찾았어요. CHROME_PATH로 지정하세요.");
-    process.exitCode = 1;
-    return;
+    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH로 지정하세요.");
   }
 
-  const chrome = spawnChrome(chromePath, PROFILE_DIR, DEBUG_PORT, ONETALK_URL, { offscreen: true });
+  const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, ONETALK_URL, { offscreen: true });
 
   try {
     if (!(await waitForCdp(DEBUG_PORT))) {
-      console.error("크롬 디버그 포트가 안 열렸어요(같은 프로필 크롬 닫고 재시도).");
-      process.exitCode = 1;
-      return;
+      throw new Error("크롬 디버그 포트가 안 열렸어요(같은 프로필 크롬 닫고 재시도).");
     }
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
     try {
       const context = browser.contexts()[0];
       const page = context.pages()[0] ?? (await context.newPage());
-      await injectCookies(context);
+      await injectCookies(context, cookiesFile);
       await page.goto(ONETALK_URL, { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => undefined);
 
       if (!(await waitForInbox(page))) {
-        console.error("세션이 만료됐거나 인박스가 안 떴습니다. 'add alibaba <라벨>'로 재로그인하세요.");
-        process.exitCode = 1;
-        return;
+        throw new Error("세션이 만료됐거나 인박스가 안 떴습니다. 'add alibaba <라벨>'로 재로그인하세요.");
       }
 
       // 대화 열기: data-cid로 행을 찾아 클릭.
-      const row = page.locator(`.contact-item-container[data-cid="${CONVERSATION}"]`).first();
+      const row = page.locator(`.contact-item-container[data-cid="${conversation}"]`).first();
       if (!(await row.count().catch(() => 0))) {
-        console.error(`대화 '${CONVERSATION}'(data-cid)를 목록에서 못 찾았습니다.`);
-        process.exitCode = 1;
-        return;
+        throw new Error(`대화 '${conversation}'(data-cid)를 목록에서 못 찾았습니다.`);
       }
       await row.click({ timeout: 5000 }).catch(() => undefined);
       await delay(2500); // 대화 패널 로딩 대기
@@ -132,24 +121,22 @@ async function main(): Promise<void> {
 
       const composer = await findComposer(page);
       if (!composer) {
-        console.error(
+        throw new Error(
           "입력창을 못 찾았습니다(셀렉터 정찰 필요). QUALIFLOW_ALIBABA_COMPOSER로 정확한 셀렉터를 지정하거나, 화면 구조를 알려주세요."
         );
-        process.exitCode = 1;
-        return;
       }
       console.log(`입력창 발견: ${composer.selector} (#${composer.index})`);
 
       const input = page.locator(composer.selector).nth(composer.index);
       await input.click({ timeout: 3000 }).catch(() => undefined);
-      await input.fill(TEXT).catch(async () => {
+      await input.fill(text).catch(async () => {
         // contenteditable은 fill이 안 먹기도 해서 타이핑으로 폴백
-        await page.keyboard.type(TEXT);
+        await page.keyboard.type(text);
       });
       await delay(500);
       await page.keyboard.press("Enter"); // 대다수 IM이 Enter로 전송
       await delay(1500);
-      console.log(`📤 Alibaba 발송 시도 완료 → 대화 ${CONVERSATION} (Enter 전송). 화면에서 실제 전송 여부를 확인하세요.`);
+      console.log(`📤 Alibaba 발송 시도 완료 → 대화 ${conversation} (Enter 전송). 화면에서 실제 전송 여부를 확인하세요.`);
     } finally {
       await browser.close().catch(() => undefined);
     }
@@ -158,4 +145,20 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+// CLI 래퍼(standalone inquiry:send 용).
+async function main(): Promise<void> {
+  const profileDir = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
+  const conversation = process.env.QUALIFLOW_ALIBABA_CONVERSATION || "";
+  const text = process.env.QUALIFLOW_ALIBABA_TEXT || "";
+  try {
+    await sendAlibaba(profileDir, conversation, text);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}
+
+// 이 파일을 직접 실행할 때만 CLI 동작(에이전트가 함수로 import할 땐 안 돈다).
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await main();
+}
