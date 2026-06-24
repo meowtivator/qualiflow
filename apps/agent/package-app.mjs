@@ -53,12 +53,16 @@ if (process.platform !== "win32") {
 }
 console.log(`③ Node 바이너리 동봉(${nodeName})`);
 
-// 4. 런처 — 두 OS용을 모두 담는다(빌드된 OS의 것만 실제로 쓰임). QUALIFLOW_HOME 세팅 후 동봉 node로 실행.
+// 4. 런처 — 두 OS용. QUALIFLOW_HOME + QUALIFLOW_CLOUD_URL(설치본은 클라우드를 가리킨다) 세팅 후 실행.
+// ★CLOUD_URL: 지금은 qualiflow.meowti.kr. 통합이 buyer-crm으로 넘어가면 그 도메인(crm.thedozers.com 등)으로 바꾼다.
+//   둘 다 미리 설정된 env가 있으면 그걸 우선(:- 기본값).
+const CLOUD_URL = "https://qualiflow.meowti.kr";
 writeFileSync(
   resolve(out, "run.sh"),
   `#!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export QUALIFLOW_HOME="\${QUALIFLOW_HOME:-$HOME/.qualiflow}"
+export QUALIFLOW_CLOUD_URL="\${QUALIFLOW_CLOUD_URL:-${CLOUD_URL}}"
 mkdir -p "$QUALIFLOW_HOME"
 exec "$DIR/node" "$DIR/agent.mjs" "$@"
 `
@@ -68,7 +72,7 @@ if (process.platform !== "win32") {
 }
 writeFileSync(
   resolve(out, "run.cmd"),
-  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
+  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not defined QUALIFLOW_CLOUD_URL set "QUALIFLOW_CLOUD_URL=${CLOUD_URL}"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
 );
 
 console.log("✅ 배포 폴더 완성: apps/agent/dist/package/  →  run.sh / run.cmd <명령>");

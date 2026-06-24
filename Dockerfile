@@ -20,6 +20,13 @@ FROM base AS builder
 # (패키지가 추가돼도 안 깨지도록 패키지별 node_modules를 일일이 나열하지 않는다.)
 COPY --from=deps /app/ ./
 COPY . .
+# ★NEXT_PUBLIC_* 는 빌드타임에 브라우저 번들로 인라인된다 → 빌드 인자로 받아 build 전에 ENV로 노출한다.
+#   (없으면 클라이언트가 Supabase에 못 붙는다. 비공개 키 SUPABASE_SECRET_KEY/QUALIFLOW_PAIRING_PEPPER 는
+#    빌드가 아니라 '런타임' env(compose)로 준다.)
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 RUN pnpm run build
 
 FROM base AS runner
