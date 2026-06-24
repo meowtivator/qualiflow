@@ -7,6 +7,7 @@ import {
   type ConversationAdapter,
   type Lead,
   type Message,
+  type MessageAttachment,
   type MessageDirection,
   type Page,
   type PageRequest,
@@ -25,6 +26,7 @@ export type ChatRawMessage = {
   sentAt: string; // ISO datetime
   direction: MessageDirection; // "inbound"(고객→나) | "outbound"(나→고객)
   authorName?: string;
+  attachments?: MessageAttachment[]; // 사진·영상 등(있으면). 텍스트-only면 생략.
 };
 
 export type ChatRawContact = {
