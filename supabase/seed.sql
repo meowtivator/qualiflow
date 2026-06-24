@@ -32,7 +32,7 @@ insert into public.leads (
   country_name,
   primary_email,
   source_channel_ids,
-  lifecycle_stage,
+  stage,
   metadata
 )
 values
@@ -46,7 +46,7 @@ values
     'United States',
     'olivia@example.com',
     array['alibaba', 'instagram'],
-    'sample_requested',
+    'sal',
     '{"alibabaPurchaseGrade":"L3","website":"https://example.com"}'
   ),
   (
@@ -59,7 +59,7 @@ values
     'Hong Kong',
     'patrick@example.com',
     array['instagram'],
-    'qualified',
+    'mql',
     '{"alibabaPurchaseGrade":"L2"}'
   )
 on conflict (id) do update
@@ -69,7 +69,7 @@ set display_name = excluded.display_name,
     country_name = excluded.country_name,
     primary_email = excluded.primary_email,
     source_channel_ids = excluded.source_channel_ids,
-    lifecycle_stage = excluded.lifecycle_stage,
+    stage = excluded.stage,
     metadata = excluded.metadata;
 
 insert into public.threads (

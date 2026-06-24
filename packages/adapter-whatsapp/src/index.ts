@@ -15,9 +15,12 @@ export type WhatsAppInboundContact = {
   phoneNumberId?: string;
   countryCode?: string;
   countryName?: string;
+  profileImageUrl?: string;
   receivedAt: string;
   updatedAt?: string;
 };
+
+export type WhatsAppUserSessionContact = WhatsAppInboundContact;
 
 export type WhatsAppInboundTextMessage = {
   externalMessageId: string;
@@ -27,8 +30,11 @@ export type WhatsAppInboundTextMessage = {
   leadId?: string;
   threadId?: string;
   profileName?: string;
+  profileImageUrl?: string;
   phoneNumberId?: string;
 };
+
+export type WhatsAppUserSessionTextMessage = WhatsAppInboundTextMessage;
 
 export type CreateWhatsAppAdapterOptions = {
   leads?: Lead[];
@@ -76,6 +82,7 @@ export function normalizeWhatsAppLead(input: WhatsAppInboundContact): Lead {
     displayName: normalizeText(input.profileName) || normalizedWaId,
     countryCode: normalizeText(input.countryCode) || undefined,
     countryName: normalizeText(input.countryName) || undefined,
+    profileImageUrl: normalizeText(input.profileImageUrl) || undefined,
     sourceChannelIds: ["whatsapp"],
     stage: "new",
     createdAt,
@@ -104,7 +111,8 @@ export function normalizeWhatsAppTextMessage(input: WhatsAppInboundTextMessage):
     visibility: "internal",
     author: {
       displayName: normalizeText(input.profileName) || normalizedWaId,
-      role: "lead"
+      role: "lead",
+      avatarUrl: normalizeText(input.profileImageUrl) || undefined
     },
     content: {
       type: "text",
@@ -141,6 +149,19 @@ export function createWhatsAppAdapter(options: CreateWhatsAppAdapterOptions = {}
     id: "whatsapp",
     label: "WhatsApp",
     channel: BUILT_IN_CHANNELS.whatsapp,
+    accountKind: "user_account",
+    authMode: "qr_pairing",
+    capabilities: ["read_messages", "send_messages", "sync_history", "realtime_events", "read_receipts", "attachments"],
+    sessionStorage: "runtime_only",
+    async syncMessages() {
+      return {
+        leads,
+        threads,
+        messages,
+        syncedAt: new Date().toISOString(),
+        connectionStatus: "active"
+      };
+    },
     async listLeads(request) {
       return paginate(leads, request);
     },

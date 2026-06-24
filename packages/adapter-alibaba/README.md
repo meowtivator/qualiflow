@@ -9,6 +9,8 @@ This package does not scrape Alibaba. It defines the first integration boundary:
 - build search candidates for sub-channel discovery such as Instagram, LinkedIn, and Facebook
 - run optional headless discovery against generated search URLs
 
+The product direction is an operator-owned Alibaba/OneTalk browser session. Login state, cookies, Playwright profiles, and relogin handling live in the headless/runtime connector, not in the pure adapter entrypoint.
+
 ## Headless discovery
 
 The headless runner reads a JSON dataset, generates buyer/company/location search URLs, opens them with Playwright, and returns matched website/social links.
@@ -54,7 +56,8 @@ https://onetalk.alibaba.com/message/weblitePWA.htm?spm=a2700.product_home_fy25.h
 
 Expected local files:
 
-- `../../.auth/alibaba.storage.json` - Playwright `storageState` from a manual Alibaba login.
+- `../../.auth/alibaba-chrome-profile` - persistent Chrome profile from a manual Alibaba login.
+- `../../apps/web/.data/alibaba-connection.json` - file-backed connector status written after `inquiry:login` completes.
 - `../../.captures/alibaba-inquiry/...` - ignored capture output with HAR, network events, WebSocket events, IndexedDB snapshots, and redacted response previews.
 
 The recorder does not automate login, bypass CAPTCHA, or send messages. It only records network traffic that the logged-in operator can already access in the browser.

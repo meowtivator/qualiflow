@@ -10,6 +10,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./runtime": {
+      "types": "./src/runtime.ts",
+      "import": "./src/runtime.ts"
     }
   },
   "files": ["dist", "README.md"],
@@ -19,6 +23,7 @@
     "inquiry:record": "tsx ./src/cli/record-inquiry.ts",
     "inquiry:login": "tsx ./src/cli/login-session.ts",
     "inquiry:extract": "tsx ./src/cli/extract-session.ts",
+    "inquiry:send": "tsx ./src/cli/send-session.ts",
     "normalize:check": "tsx ./src/normalize.check.ts",
     "typecheck": "tsc --noEmit"
   },

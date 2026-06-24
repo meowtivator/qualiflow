@@ -7,7 +7,14 @@
 import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { CHANNEL_CONNECTION_STATUSES, FOLLOW_UP_STATES, LEAD_STAGES, LEAD_SUB_STAGES } from "@qualiflow/core";
+import {
+  CHANNEL_ACCOUNT_KINDS,
+  CHANNEL_AUTH_MODES,
+  CHANNEL_CONNECTION_STATUSES,
+  FOLLOW_UP_STATES,
+  LEAD_STAGES,
+  LEAD_SUB_STAGES
+} from "@qualiflow/core";
 
 const migrationsDir = resolve(process.cwd(), "supabase/migrations");
 const files = (await readdir(migrationsDir)).filter((name) => name.endsWith(".sql")).sort();
@@ -54,6 +61,8 @@ check("leads.stage", "stage", LEAD_STAGES);
 check("leads.sub_stage", "sub_stage", LEAD_SUB_STAGES);
 check("threads.follow_up", "follow_up", FOLLOW_UP_STATES);
 check("channel_connections.status", "status", CHANNEL_CONNECTION_STATUSES);
+check("channel_connections.account_kind", "account_kind", CHANNEL_ACCOUNT_KINDS);
+check("channel_connections.auth_mode", "auth_mode", CHANNEL_AUTH_MODES);
 
 if (failed) {
   console.error("\n❌ 불일치 — 마이그레이션과 core 상수를 맞추세요.");

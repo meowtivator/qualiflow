@@ -20,6 +20,7 @@ export const mockLeads: Lead[] = [
     countryCode: "US",
     countryName: "United States",
     primaryEmail: "olivia@harborbeauty.example",
+    profileImageUrl: "https://i.pravatar.cc/96?u=lead_harbor_beauty",
     sourceChannelIds: ["alibaba", "instagram"],
     stage: "sal",
     subStage: "proposal",
@@ -39,6 +40,7 @@ export const mockLeads: Lead[] = [
     countryCode: "HK",
     countryName: "Hong Kong",
     primaryEmail: "patrick@miraebeauty.example",
+    profileImageUrl: "https://i.pravatar.cc/96?u=lead_mirae_beauty_hk",
     sourceChannelIds: ["instagram"],
     stage: "mql",
     subStage: "need_analysis",
@@ -57,6 +59,7 @@ export const mockLeads: Lead[] = [
     companyName: "Bangkok Food Trading",
     countryCode: "TH",
     countryName: "Thailand",
+    profileImageUrl: "https://i.pravatar.cc/96?u=lead_bangkok_food",
     sourceChannelIds: ["email"],
     stage: "mql",
     subStage: "qualification",
@@ -407,7 +410,8 @@ export const mockConversationAdapter: ConversationAdapter = {
       throw new Error(`Thread not found: ${request.threadId}`);
     }
 
-    return {
+    const sentAt = new Date().toISOString();
+    const message: Message = {
       id: `msg_draft_${Date.now()}`,
       threadId: request.threadId,
       leadId: thread.leadId,
@@ -424,7 +428,13 @@ export const mockConversationAdapter: ConversationAdapter = {
         type: "text",
         text: request.text
       },
-      sentAt: new Date().toISOString()
+      sentAt
+    };
+
+    return {
+      message,
+      status: message.status,
+      sentAt
     };
   }
 };

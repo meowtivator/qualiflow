@@ -1,0 +1,30 @@
+{
+  "name": "@qualiflow/adapter-telegram",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Telegram user-account dialog adapter for QualiFlow.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "normalize:check": "tsx ./src/normalize.check.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@qualiflow/adapter-chat": "workspace:*",
+    "@qualiflow/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.1",
+    "tsx": "4.20.6",
+    "typescript": "6.0.3"
+  }
+}

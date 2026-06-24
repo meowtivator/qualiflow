@@ -1,8 +1,8 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
 
-import { ChannelBadge } from "./channel-badge";
-import { formatShortDate, getInitials, getLeadLabel, getMetadataText } from "./format";
+import { formatShortDate, getLeadLabel, getMetadataText } from "./format";
+import { LeadAvatar } from "./lead-avatar";
 import type { ThreadListItem } from "./types";
 
 type ThreadListProps = {
@@ -37,11 +37,8 @@ function ThreadPreview({ item, selected }: { item: ThreadListItem; selected: boo
   const nextAction = getMetadataText(thread.metadata?.nextAction, "다음 액션 확인 필요");
 
   return (
-    <Link className={`thread-row ${selected ? "selected" : ""}`} href={`/?thread=${thread.id}`}>
-      <div className="lead-avatar">
-        <span>{getInitials(lead)}</span>
-        <ChannelBadge channel={channel} />
-      </div>
+    <Link className={`thread-row ${selected ? "selected" : ""}`} href={{ pathname: "/", query: { thread: thread.id } }}>
+      <LeadAvatar channel={channel} lead={lead} />
       <div className="thread-copy">
         <div className="thread-title-line">
           <strong>{getLeadLabel(lead)}</strong>

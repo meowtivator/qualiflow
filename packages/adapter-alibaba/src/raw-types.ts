@@ -30,6 +30,7 @@ export type AlibabaRawContact = {
   name?: string;
   companyName?: string;
   complianceCountryCode?: string; // 예: "KR"
+  profileImageUrl?: string;
 };
 
 // "고객 활동" 패널(지난 90일)의 지표.

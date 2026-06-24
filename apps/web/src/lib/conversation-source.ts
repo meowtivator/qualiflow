@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import {
@@ -14,35 +14,32 @@ import {
   mockQualifications
 } from "@qualiflow/adapter-mock";
 import {
+  createTelegramAdapterFromUserDialogs,
+  type TelegramUserDialog
+} from "@qualiflow/adapter-telegram";
+import {
   BUILT_IN_CHANNELS,
   type BuiltInChannelId,
   type Channel,
   type ConversationAdapter,
   type Lead,
-  type LeadQualification,
   type Message,
   type Page
 } from "@qualiflow/core";
 
+import type { ConversationSource } from "./conversation-store";
+
 // 실제 채널 데이터(실제 고객 개인정보)는 절대 git에 안 올린다.
 // gitignore된 .data/ 폴더에서 채널별 파일을 읽고, 하나도 없으면 mock으로 폴백한다.
 //   .data/alibaba-conversations.json      (AlibabaRawConversation[])
+//   .data/telegram-dialogs.json           (TelegramUserDialog[] from MTProto/TDLib connector)
 //   .data/telegram-conversations.json     (ChatRawConversation[])
 //   .data/instagram-conversations.json    (ChatRawConversation[])
 //   .data/whatsapp-conversations.json     (ChatRawConversation[])
 const DATA_DIR = resolve(process.cwd(), ".data");
 
 // adapter-chat 하나로 처리하는 단순 채팅 채널들.
-const CHAT_CHANNELS: BuiltInChannelId[] = ["telegram", "instagram", "whatsapp"];
-
-export type ConversationSource = {
-  kind: "channels" | "mock";
-  adapter: ConversationAdapter;
-  getLead: (leadId: string) => Lead | undefined;
-  getChannel: (channelId: string) => Channel;
-  getQualification: (leadId: string) => LeadQualification | undefined;
-  gradeACount: number;
-};
+const CHAT_CHANNELS: BuiltInChannelId[] = ["instagram", "whatsapp"];
 
 async function readJsonArray<TItem>(fileName: string): Promise<TItem[] | null> {
   try {
@@ -52,6 +49,36 @@ async function readJsonArray<TItem>(fileName: string): Promise<TItem[] | null> {
     // 파일이 없거나 깨졌으면 그 채널은 건너뛴다(조용히).
     return null;
   }
+}
+
+// 한 채널의 모든 계정 파일을 합쳐서 읽는다(다계정 → 한 인박스):
+//   <channel>-conversations.json           (default 계정, 하위호환)
+//   <channel>-conversations--<label>.json  (그 외 계정)
+async function readAllConversations<TItem>(channel: string): Promise<TItem[] | null> {
+  let files: string[];
+  try {
+    files = await readdir(DATA_DIR);
+  } catch {
+    return null;
+  }
+
+  const matching = files
+    .filter((file) => file === `${channel}-conversations.json` || file.startsWith(`${channel}-conversations--`))
+    .filter((file) => file.endsWith(".json"))
+    .sort();
+
+  const all: TItem[] = [];
+  for (const file of matching) {
+    try {
+      const parsed = JSON.parse(await readFile(resolve(DATA_DIR, file), "utf8")) as unknown;
+      if (Array.isArray(parsed)) {
+        all.push(...(parsed as TItem[]));
+      }
+    } catch {
+      // 깨진 파일은 건너뛴다.
+    }
+  }
+  return all.length > 0 ? all : null;
 }
 
 function resolveChannel(channelId: string): Channel {
@@ -85,23 +112,43 @@ function createAggregateAdapter(adapters: ConversationAdapter[]): ConversationAd
 
 export async function loadConversationSource(): Promise<ConversationSource> {
   const adapters: ConversationAdapter[] = [];
+  const loadedChannels: BuiltInChannelId[] = [];
 
-  const alibaba = await readJsonArray<AlibabaRawConversation>("alibaba-conversations.json");
+  const alibaba = await readAllConversations<AlibabaRawConversation>("alibaba");
   if (alibaba) {
     adapters.push(createAlibabaAdapterFromConversations(alibaba));
+    loadedChannels.push("alibaba");
+  }
+
+  const telegramDialogs = await readJsonArray<TelegramUserDialog>("telegram-dialogs.json");
+  if (telegramDialogs) {
+    adapters.push(createTelegramAdapterFromUserDialogs(telegramDialogs));
+    loadedChannels.push("telegram");
+  } else {
+    const telegramConversations = await readAllConversations<ChatRawConversation>("telegram");
+    if (telegramConversations) {
+      adapters.push(createChatAdapter("telegram", telegramConversations, { authMode: "phone_code" }));
+      loadedChannels.push("telegram");
+    }
   }
 
   for (const channelId of CHAT_CHANNELS) {
-    const conversations = await readJsonArray<ChatRawConversation>(`${channelId}-conversations.json`);
+    const conversations = await readAllConversations<ChatRawConversation>(channelId);
     if (conversations) {
       adapters.push(createChatAdapter(channelId, conversations));
+      loadedChannels.push(channelId);
     }
   }
 
   // 채널 데이터가 하나도 없으면 mock으로 폴백(데모 기본).
   if (adapters.length === 0) {
     return {
-      kind: "mock",
+      status: {
+        kind: "mock",
+        label: "Mock data",
+        detail: "실제 채널 JSON 없음",
+        tone: "warning"
+      },
       adapter: mockConversationAdapter,
       getLead: getMockLeadById,
       getChannel: getMockChannelById,
@@ -117,8 +164,15 @@ export async function loadConversationSource(): Promise<ConversationSource> {
     leadById.set(lead.id, lead);
   }
 
+  const loadedChannelLabels = loadedChannels.map((channelId) => BUILT_IN_CHANNELS[channelId].label).join(", ");
+
   return {
-    kind: "channels",
+    status: {
+      kind: "file-json",
+      label: "Real JSON preview",
+      detail: loadedChannelLabels,
+      tone: "ok"
+    },
     adapter,
     getLead: (leadId) => leadById.get(leadId),
     getChannel: (channelId) => resolveChannel(channelId),

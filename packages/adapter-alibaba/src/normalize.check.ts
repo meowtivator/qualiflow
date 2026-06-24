@@ -42,6 +42,7 @@ assert("inbound 작성자 역할이 lead", messages[1].author.role === "lead");
 // ── lead(바이어) 변환 점검 ──
 assert("바이어 이름이 lead.displayName으로", lead.displayName === "Sample Buyer");
 assert("국가코드가 lead.countryCode로", lead.countryCode === "KR");
+assert("프로필 이미지 URL이 lead.profileImageUrl로", lead.profileImageUrl === "https://example.com/sample-buyer-profile.jpg");
 assert("lead.stage = new (단계 진행은 CRM 몫)", lead.stage === "new");
 assert("마지막이 inbound라 followUp = needs_my_reply", thread.followUp === "needs_my_reply");
 // 계약 검사: 생산된 값이 core 허용집합 안에 있는지

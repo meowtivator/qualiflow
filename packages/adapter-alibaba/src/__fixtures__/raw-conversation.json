@@ -6,7 +6,8 @@
     "loginId": "sample_buyer_login",
     "name": "Sample Buyer",
     "companyName": "Sample Trading Co.",
-    "complianceCountryCode": "KR"
+    "complianceCountryCode": "KR",
+    "profileImageUrl": "https://example.com/sample-buyer-profile.jpg"
   },
   "messages": [
     {

@@ -1,101 +1,103 @@
 #!/usr/bin/env node
 
-// 알리바바 OneTalk 라이브 세션 추출기 (route B).
+// 알리바바 OneTalk 라이브 추출기 (route B) — "순수 크롬 + 영구 프로필 + CDP".
 //
-// ⚠️ 보안 경계: 이 스크립트는 당신의 "실제 알리바바 로그인"을 담은 storageState 파일을
-//    들고 브라우저를 띄운다. 그 파일은 사실상 비밀번호와 동급이다(절대 커밋/공유 금지).
+// ⚠️ 왜 순수 크롬인가: Playwright가 launch한 크롬은 자동화 흔적(navigator.webdriver 등)이 있어
+//    OneTalk/CAPTCHA가 탐지해 깨진다. 그래서 자동화 플래그 없는 "그냥 크롬"을 띄우고(원격디버깅
+//    포트만 열고) 거기 CDP로 "붙어서" 읽는다. 로그인 세션은 inquiry:login 이 만든 영구 프로필
+//    (.auth/alibaba-chrome-profile)을 재사용한다(= 읽기는 자동, 로그인은 사람).
 //
-// 동작: storageState로 로그인된 브라우저를 띄움 → OneTalk 열기 → 로그인 살아있는지
-//   health check → 대화 목록을 하나씩 열며 React 내부 상태(itemData)에서 메시지/바이어를
-//   추출 → AlibabaRawConversation[] 를 JSON 파일로 저장(웹앱이 읽는 .data 경로).
-//
+//   준비: 먼저 pnpm --filter @qualiflow/adapter-alibaba run inquiry:login 으로 로그인.
 //   실행: pnpm --filter @qualiflow/adapter-alibaba run inquiry:extract
-//   준비: 먼저 사람이 한 번 로그인해 storageState를 저장해야 한다(README 참고).
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { chromium } from "playwright-core";
+import { chromium, type BrowserContext, type Page } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
+import { findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
-const DEFAULT_STORAGE_STATE = "../../.auth/alibaba.storage.json";
-const DEFAULT_OUTPUT = "../../apps/web/.data/alibaba-conversations.json";
-const DEFAULT_URL =
-  "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
+const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
+const DEBUG_PORT = 9222;
+const MAX_CONVERSATIONS = 30;
+const OPEN_TIMEOUT_MS = 10_000; // 한 대화를 열고 그 대화 메시지가 fiber에 뜰 때까지 최대 대기
+const POLL_MS = 400; // 폴링 간격
+const MAX_SCROLLS = 60; // 한 대화에서 위로 스크롤하며 옛 메시지를 끌어올 최대 횟수(폭주 방지 상한)
+const SCROLL_WAIT_MS = 800; // 한 번 스크롤한 뒤 옛 메시지가 그려지거나(가상 리스트) 불러와질(지연 로딩) 때까지 대기
 
-type CliArgs = {
-  storageState: string;
-  output: string;
-  url: string;
-  headless: boolean;
-  browserChannel?: "chrome" | "msedge" | "chromium";
-  maxConversations: number;
-  perConversationWaitMs: number;
-};
+const INBOX_READY_TIMEOUT_MS = 40_000; // 대화 목록이 뜰 때까지 최대 대기
+const INBOX_POLL_MS = 500;
+const LOGIN_STREAK_LIMIT = 16; // 로그인/passport 페이지가 16×500ms=8초 연속이면 진짜 만료로 판정
 
-function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = {
-    storageState: DEFAULT_STORAGE_STATE,
-    output: DEFAULT_OUTPUT,
-    url: DEFAULT_URL,
-    headless: false, // 기본은 화면 보이게(headed) — 봇 탐지를 덜 자극하고, 사람이 지켜볼 수 있게
-    browserChannel: "chrome",
-    maxConversations: 20,
-    perConversationWaitMs: 2500
-  };
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    const next = argv[index + 1];
-    if (arg === "--storage-state") (args.storageState = next), (index += 1);
-    else if (arg === "--output") (args.output = next), (index += 1);
-    else if (arg === "--url") (args.url = next), (index += 1);
-    else if (arg === "--headless") args.headless = true;
-    else if (arg === "--headed") args.headless = false;
-    else if (arg === "--max") (args.maxConversations = Number(next)), (index += 1);
+// onetalk 세션 상태를 폴링으로 판정한다.
+//   "ready"   = 대화 목록(.contact-item-container)이 떴음 → 세션 유효 + 로딩 완료
+//   "login"   = 로그인/passport 페이지에 8초+ 연속 머무름 → 세션 만료
+//   "timeout" = 둘 다 아님(로딩이 느리거나 인박스가 비어 있음) → 추출은 그래도 시도
+// ⚠️ 예전엔 2.5초 뒤 URL만 한 번 보고 판정했는데, onetalk는 유효 세션이어도 passport(SSO)를
+//    잠깐 경유하므로 그 순간을 "만료"로 오판했다. 이제 "행이 뜨는가"를 본다(= login-session과 동일 기준).
+async function waitForInbox(page: Page): Promise<"ready" | "login" | "timeout"> {
+  const deadline = Date.now() + INBOX_READY_TIMEOUT_MS;
+  let loginStreak = 0;
+  while (Date.now() < deadline) {
+    const rowCount = await page
+      .locator(".contact-item-container")
+      .count()
+      .catch(() => 0);
+    if (rowCount > 0) return "ready";
+    if (/login|signin|passport/i.test(page.url())) {
+      loginStreak += 1;
+      if (loginStreak >= LOGIN_STREAK_LIMIT) return "login";
+    } else {
+      loginStreak = 0;
+    }
+    await page.waitForTimeout(INBOX_POLL_MS);
   }
-
-  return args;
+  return "timeout";
 }
 
-// 페이지(브라우저) 안에서 실행되는 추출 스크립트.
-// React fiber 트리를 훑어 itemData(메시지 객체)를 모은다 — 네트워크가 아니라 메모리에서.
-// 반환: { owner, contact, messages } (열려 있는 대화 1개) 또는 null.
+// login이 백업한 세션 쿠키를 컨텍스트에 주입한다(goto 전). 파일 없으면 프로필 쿠키에 의존(폴백).
+async function injectSessionCookies(context: BrowserContext, file: string): Promise<number> {
+  try {
+    const cookies = JSON.parse(await readFile(file, "utf8")) as Parameters<BrowserContext["addCookies"]>[0];
+    if (Array.isArray(cookies) && cookies.length) {
+      await context.addCookies(cookies);
+      return cookies.length;
+    }
+  } catch {
+    // 파일 없거나 깨짐 → 프로필 쿠키로 폴백
+  }
+  return 0;
+}
+
+// 페이지 안에서 실행되는 추출 스크립트: React fiber 트리를 훑어 itemData(메시지)를 모은다.
 const EXTRACT_IN_PAGE = String.raw`
 () => {
   function fiberKey(el) {
     return Object.keys(el).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
   }
-  function getAnyFiber() {
+  // 정찰로 확인: 열린 대화의 메시지는 각 DOM 요소의 fiber에서 위로 몇 단계 안에 itemData(메시지)로 들어있다.
+  // (루트에서 아래로 DFS 하던 옛 방식은 메시지 패널이 다른 fiber 루트면 못 찾았다 → 모든 요소에서 위로 훑는다.)
+  function collectMessages() {
+    const out = [];
+    const seen = new Set();
     const nodes = document.querySelectorAll("div, span, p");
     for (const el of nodes) {
       const k = fiberKey(el);
-      if (k) return el[k];
-    }
-    return null;
-  }
-  // fiber 트리의 꼭대기로 올라간 뒤, 전체를 DFS하며 itemData(messageId 보유)를 모은다.
-  function collectMessages() {
-    let root = getAnyFiber();
-    if (!root) return [];
-    while (root.return) root = root.return;
-    const out = [];
-    const seen = new Set();
-    const stack = [root];
-    let guard = 0;
-    while (stack.length && guard < 200000) {
-      guard += 1;
-      const fiber = stack.pop();
-      if (!fiber) continue;
-      const p = fiber.memoizedProps;
-      const m = p && p.itemData;
-      if (m && m.messageId != null && !seen.has(m.messageId)) {
-        seen.add(m.messageId);
-        out.push(m);
+      if (!k) continue;
+      let fiber = el[k];
+      let hops = 0;
+      while (fiber && hops < 8) {
+        const p = fiber.memoizedProps;
+        const m = p && p.itemData;
+        if (m && m.messageId != null && !seen.has(m.messageId)) {
+          seen.add(m.messageId);
+          out.push(m);
+        }
+        fiber = fiber.return;
+        hops += 1;
       }
-      if (fiber.child) stack.push(fiber.child);
-      if (fiber.sibling) stack.push(fiber.sibling);
     }
     return out;
   }
@@ -103,7 +105,6 @@ const EXTRACT_IN_PAGE = String.raw`
   const raw = collectMessages();
   if (!raw.length) return null;
 
-  // 메시지 정리(데이터 필드만, 함수/DOM 제외)
   const messages = raw
     .map((m) => ({
       messageId: m.messageId,
@@ -124,7 +125,6 @@ const EXTRACT_IN_PAGE = String.raw`
 
   if (!messages.length) return null;
 
-  // owner/contact 는 메시지 객체 안에 같이 들어 있다(우리가 정찰 때 확인).
   const withParties = raw.find((m) => m.owner && m.contact) || {};
   const owner = withParties.owner || {};
   const contact = withParties.contact || {};
@@ -136,86 +136,284 @@ const EXTRACT_IN_PAGE = String.raw`
       loginId: contact.loginId,
       name: contact.name,
       companyName: contact.companyName,
-      complianceCountryCode: contact.complianceCountryCode
+      complianceCountryCode: contact.complianceCountryCode,
+      profileImageUrl:
+        contact.profileImageUrl ||
+        contact.avatarUrl ||
+        contact.avatar ||
+        contact.headImageUrl ||
+        contact.headUrl ||
+        contact.logoUrl
     },
     messages
   };
 }
 `;
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const storageStatePath = resolve(args.storageState);
-  const outputPath = resolve(args.output);
+// 메시지 패널(스크롤 컨테이너)을 한 화면의 80%만큼 위로 올린다(20% 겹쳐서 빠뜨리지 않게).
+// 반환: { found(스크롤 컨테이너 찾음), atTop(맨 위 도달) }. 짧은 대화는 컨테이너가 안 넘쳐 found:false.
+const SCROLL_UP_IN_PAGE = String.raw`
+() => {
+  function fiberKey(el) {
+    return Object.keys(el).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+  }
+  // 메시지 요소 하나 찾기(itemData.messageId 가진 fiber의 DOM).
+  let msgEl = null;
+  for (const el of document.querySelectorAll("div, span, p")) {
+    const k = fiberKey(el);
+    if (!k) continue;
+    let fiber = el[k];
+    let hops = 0;
+    while (fiber && hops < 8) {
+      const m = fiber.memoizedProps && fiber.memoizedProps.itemData;
+      if (m && m.messageId != null) { msgEl = el; break; }
+      fiber = fiber.return;
+      hops += 1;
+    }
+    if (msgEl) break;
+  }
+  if (!msgEl) return { found: false, atTop: true };
+  // 그 요소에서 위로 올라가며 스크롤 가능한 조상(메시지 패널)을 찾는다.
+  let c = msgEl;
+  while (c && c !== document.body) {
+    const s = getComputedStyle(c);
+    if ((s.overflowY === "auto" || s.overflowY === "scroll") && c.scrollHeight > c.clientHeight + 10) break;
+    c = c.parentElement;
+  }
+  if (!c || c === document.body) return { found: false, atTop: true };
+  const before = c.scrollTop;
+  c.scrollTop = Math.max(0, before - Math.floor(c.clientHeight * 0.8));
+  return { found: true, atTop: c.scrollTop === 0 };
+}
+`;
 
-  // storageState 파일 존재 확인 (없으면 사람이 먼저 로그인해서 저장해야 함)
-  try {
-    await readFile(storageStatePath, "utf8");
-  } catch {
-    console.error(
-      `로그인 세션 파일이 없습니다: ${storageStatePath}\n` +
-        `먼저 한 번 로그인해서 storageState를 저장하세요(README의 "세션 저장" 참고).`
-    );
-    process.exitCode = 1;
-    return;
+// ⚠️ 위 둘은 "() => {...}" 문자열. Playwright는 문자열을 표현식으로만 평가하고 함수를 호출하지
+//    않으므로 (…)() 로 감싸 "호출되게" 한다(안 그러면 함수값→undefined→0).
+const EXTRACT_CALL = `(${EXTRACT_IN_PAGE})()`;
+const SCROLL_CALL = `(${SCROLL_UP_IN_PAGE})()`;
+
+function buildReadRowProfileImageScript(cid: string | null, index: number) {
+  const serialized = JSON.stringify({ cid, index });
+
+  return String.raw`
+    (() => {
+      const args = ${serialized};
+      const rows = Array.from(document.querySelectorAll(".contact-item-container"));
+      const row = args.cid
+        ? rows.find((item) => item.getAttribute("data-cid") === args.cid)
+        : rows[args.index];
+
+      if (!row) return undefined;
+
+      function absolutize(value) {
+        if (!value || typeof value !== "string") return undefined;
+        const trimmed = value.trim();
+        if (!trimmed || trimmed.startsWith("data:") || trimmed.startsWith("blob:")) return undefined;
+        try {
+          return new URL(trimmed, location.href).href;
+        } catch {
+          return undefined;
+        }
+      }
+
+      function fromBackground(value) {
+        const match = String(value || "").match(/url\((['"]?)(.*?)\1\)/);
+        return match ? absolutize(match[2]) : undefined;
+      }
+
+      const candidates = [];
+      for (const image of Array.from(row.querySelectorAll("img"))) {
+        candidates.push(image.currentSrc, image.src, image.getAttribute("data-src"), image.getAttribute("data-original"));
+      }
+      for (const element of Array.from(row.querySelectorAll("*"))) {
+        candidates.push(
+          element.getAttribute("data-avatar"),
+          element.getAttribute("data-avatar-url"),
+          element.getAttribute("data-profile-image-url"),
+          element.getAttribute("data-src"),
+          fromBackground(getComputedStyle(element).backgroundImage)
+        );
+      }
+
+      for (const candidate of candidates) {
+        const url = absolutize(candidate);
+        if (url && /^https?:\/\//.test(url)) return url;
+      }
+
+      return undefined;
+    })()
+  `;
+}
+
+// 인박스를 긁어 AlibabaRawConversation[]를 반환한다(파일 쓰기·프로세스 종료 없음 — 호출부가 결정).
+// 에이전트가 서브프로세스 없이 함수로 직접 부른다. 치명적 상황은 throw.
+export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConversation[]> {
+  const cookiesFile = `${profileDir}.cookies.json`; // login이 백업한 세션 쿠키
+  const chromePath = await findChrome();
+  if (!chromePath) {
+    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
   }
 
-  const browser = await chromium.launch({ headless: args.headless, channel: args.browserChannel });
-  const context = await browser.newContext({ storageState: storageStatePath, viewport: { width: 1440, height: 1000 } });
-  const page = await context.newPage();
+  // 자동화 플래그 없는 "그냥 크롬" + inquiry:login 이 만든 영구 프로필(화면 밖).
+  const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, ONETALK_URL, { offscreen: true });
 
-  await page.goto(args.url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await page.waitForTimeout(args.perConversationWaitMs);
+  if (!(await waitForCdp(DEBUG_PORT))) {
+    chrome.kill("SIGTERM");
+    throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 떠 있으면 닫고 다시 시도하세요.");
+  }
 
-  // health check: 로그인 페이지로 튕겼으면 세션 만료
-  if (/login|signin|passport/i.test(page.url())) {
-    console.error(`세션이 만료된 것 같습니다(로그인 페이지로 이동: ${page.url()}). 다시 로그인 후 storageState를 갱신하세요.`);
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
+  const context = browser.contexts()[0];
+  const page = context.pages()[0] ?? (await context.newPage());
+
+  // ★goto 전에 login이 백업한 세션 쿠키를 주입한다(프로필만으론 세션 쿠키가 사라져 로그인 페이지로 튐).
+  const injected = await injectSessionCookies(context, cookiesFile);
+  if (injected) {
+    console.log(`백업 세션 쿠키 ${injected}개 주입(프로필 + 쿠키 이중 보강).`);
+  }
+
+  await page.goto(ONETALK_URL, { waitUntil: "domcontentloaded", timeout: 30_000 }).catch(() => undefined);
+
+  // 세션 유효 + 인박스 로딩을 폴링으로 확인(URL만 보던 성급한 만료 오판 제거).
+  const inboxState = await waitForInbox(page);
+  if (inboxState === "login") {
     await browser.close();
-    process.exitCode = 1;
-    return;
+    chrome.kill("SIGTERM");
+    throw new Error("세션이 만료된 것 같아요(로그인 페이지에 계속 머무름). 다시 'add alibaba <라벨>'로 로그인하세요.");
+  }
+  if (inboxState === "timeout") {
+    console.log("⏳ 대화 목록이 시간 내에 안 떴어요(대화가 없거나 로딩이 느림) — 그래도 추출을 시도합니다.");
   }
 
-  // 대화 목록 행을 찾는다(이름 + 시간이 든 클릭 가능한 행). 셀렉터가 깨지면 라이브에서 보정 필요.
-  const rows = page.locator('[class*="conversation"] [class*="item"], [class*="contact-item"], [role="listitem"]');
-  const rowCount = Math.min(await rows.count().catch(() => 0), args.maxConversations);
+  // 클릭을 가로막는 모달(예: 오프라인 안내 팝업)을 닫는다. 안 닫으면 대화 클릭이 막혀 0개가 나온다.
+  await page.keyboard.press("Escape").catch(() => undefined);
+  await page.waitForTimeout(500);
+  await page
+    .locator(".next-dialog-close, .im-next-dialog-close, [class*='dialog-close']")
+    .first()
+    .click({ timeout: 1500 })
+    .catch(() => undefined);
+  // 문자열로 평가(인라인 함수로 두면 tsc가 Node lib에 DOM 없다고 에러). 런타임은 그대로 동작.
+  await page
+    .evaluate(`document.querySelectorAll(".im-next-overlay-wrapper").forEach((el) => el.remove())`)
+    .catch(() => undefined);
+
+  // 대화 목록 행 (정찰로 확인: div.contact-item-container, data-cid=conversationCode)
+  const rows = page.locator(".contact-item-container");
+  const rowCount = Math.min(await rows.count().catch(() => 0), MAX_CONVERSATIONS);
 
   const conversations: AlibabaRawConversation[] = [];
   const seenCodes = new Set<string>();
 
-  async function extractCurrent() {
-    const result = (await page.evaluate(EXTRACT_IN_PAGE).catch(() => null)) as AlibabaRawConversation | null;
-    if (result && result.messages.length) {
-      const code = result.messages[0]?.conversationCode;
-      if (code && !seenCodes.has(code)) {
-        seenCodes.add(code);
-        conversations.push(result);
+  // 한 대화를 연 뒤, 그 대화(cid)의 메시지가 fiber에 나타날 때까지 폴링한다(WebSocket 로딩 대기).
+  // cid가 일치하면 "확실히 이 대화" → 채택. 일치 못 해도 패널이 안정되면(같은 code 2회 연속) 채택.
+  async function waitForConversation(expectedCid: string | null): Promise<AlibabaRawConversation | null> {
+    const deadline = Date.now() + OPEN_TIMEOUT_MS;
+    let lastCode: string | undefined;
+    let stable: AlibabaRawConversation | null = null;
+    while (Date.now() < deadline) {
+      const result = (await page.evaluate(EXTRACT_CALL).catch(() => null)) as AlibabaRawConversation | null;
+      if (result && result.messages.length) {
+        const code = result.messages[0]?.conversationCode;
+        if (expectedCid && code === expectedCid) return result; // 확실히 이 대화
+        if (code && code === lastCode) stable = result; // 잔상 아니라 패널이 안정됨
+        lastCode = code;
       }
+      await page.waitForTimeout(POLL_MS);
     }
+    return stable;
   }
 
-  if (rowCount > 0) {
-    for (let index = 0; index < rowCount; index += 1) {
-      await rows.nth(index).click({ timeout: 5000 }).catch(() => undefined);
-      await page.waitForTimeout(args.perConversationWaitMs);
-      await extractCurrent();
+  console.log(`대화 목록 행 ${rowCount}개 발견. 하나씩 열고, 위로 스크롤하며 전체 이력 추출...`);
+  for (let index = 0; index < rowCount; index += 1) {
+    const row = rows.nth(index);
+    const cid = await row.getAttribute("data-cid").catch(() => null);
+    const dataName = await row.getAttribute("data-name").catch(() => null);
+    const dataAliId = await row.getAttribute("data-ali-id").catch(() => null);
+    const profileImageUrl = (await page.evaluate(buildReadRowProfileImageScript(cid, index)).catch(() => undefined)) as
+      | string
+      | undefined;
+
+    await row.click({ timeout: 5000 }).catch(() => undefined);
+    const first = await waitForConversation(cid);
+    if (!first || !first.messages.length) {
+      console.log(`  [${index + 1}/${rowCount}] 건너뜀(메시지 못 뜸)`);
+      continue;
     }
-  } else {
-    // 목록 셀렉터를 못 찾으면 최소한 현재 열린 대화라도 추출
-    await extractCurrent();
+
+    const code = first.messages[0]?.conversationCode || cid || "";
+    if (!code || seenCodes.has(code)) {
+      console.log(`  [${index + 1}/${rowCount}] 건너뜀(중복/무효 코드)`);
+      continue;
+    }
+    seenCodes.add(code);
+
+    // 가상 리스트라 한 화면에 ~20개만 그려진다. 위로 한 화면씩 올리며 매 스냅샷을 messageId로 누적.
+    const byId = new Map<number | string, AlibabaRawConversation["messages"][number]>();
+    const merge = (snap: AlibabaRawConversation | null) => {
+      if (!snap) return;
+      for (const m of snap.messages) {
+        if (m.conversationCode === code && m.messageId != null && !byId.has(m.messageId)) {
+          byId.set(m.messageId, m);
+        }
+      }
+    };
+    merge(first);
+
+    let scrolls = 0;
+    let stable = 0; // 스크롤했는데 새 메시지가 안 늘어난 연속 횟수
+    while (scrolls < MAX_SCROLLS) {
+      const scroll = (await page.evaluate(SCROLL_CALL).catch(() => null)) as { found: boolean; atTop: boolean } | null;
+      await page.waitForTimeout(SCROLL_WAIT_MS);
+      const before = byId.size;
+      merge((await page.evaluate(EXTRACT_CALL).catch(() => null)) as AlibabaRawConversation | null);
+      stable = byId.size === before ? stable + 1 : 0;
+      scrolls += 1;
+      // 맨 위 도달(또는 스크롤 컨테이너 없음=짧은 대화) + 2회 연속 새 메시지 없음 → 끝.
+      if ((!scroll || !scroll.found || scroll.atTop) && stable >= 2) break;
+    }
+
+    const messages = [...byId.values()].sort((a, b) => (a.sendTime ?? 0) - (b.sendTime ?? 0));
+    conversations.push({
+      owner: first.owner,
+      contact: {
+        ...first.contact,
+        name: first.contact.name || dataName || undefined,
+        aliId: first.contact.aliId || dataAliId || undefined,
+        profileImageUrl: first.contact.profileImageUrl || profileImageUrl
+      },
+      messages
+    });
+    const capped = scrolls >= MAX_SCROLLS ? " ⚠️상한도달(더 있을 수 있음)" : "";
+    console.log(`  [${index + 1}/${rowCount}] ${messages.length}개 메시지 (스크롤 ${scrolls}회)${capped}`);
   }
 
   await browser.close();
-
-  if (!conversations.length) {
-    console.error("추출된 대화가 없습니다. 대화를 하나 연 상태로 다시 시도하거나, 목록 셀렉터를 점검하세요.");
-    process.exitCode = 1;
-    return;
-  }
-
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
-  console.log(`대화 ${conversations.length}개를 저장했습니다: ${outputPath}`);
-  console.log("이제 웹앱을 새로고침하면 이 알리바바 데이터가 인박스에 보입니다.");
+  chrome.kill("SIGTERM");
+  return conversations;
 }
 
-await main();
+// CLI 래퍼: 환경변수로 받아 extractAlibaba 실행 → 파일 저장(standalone inquiry:extract 용).
+async function main() {
+  const profileDir = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
+  const outputPath = process.env.QUALIFLOW_ALIBABA_OUTPUT || resolve("../../apps/web/.data/alibaba-conversations.json");
+  try {
+    const conversations = await extractAlibaba(profileDir);
+    if (!conversations.length) {
+      console.error("추출된 대화가 없습니다. 대화를 하나 연 상태로 다시 시도하거나, 목록 셀렉터를 점검하세요.");
+      process.exitCode = 1;
+      return;
+    }
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, `${JSON.stringify(conversations, null, 2)}\n`, "utf8");
+    console.log(`대화 ${conversations.length}개를 저장했습니다: ${outputPath}`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}
+
+// 이 파일을 직접 실행할 때만 CLI 동작(에이전트가 함수로 import할 땐 안 돈다).
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await main();
+}

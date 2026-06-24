@@ -3,7 +3,10 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { getSupabasePublicConfig } from "./config";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/otp"];
+// /api/agents/pair 는 에이전트(로그인 세션 없음)가 호출하므로 공개. 보안은 세션이 아니라 페어링 코드가 책임진다.
+// (/api/agents/pairing-code 는 여기 없음 → 로그인 게이트 그대로 적용됨)
+// /api/dev/login 은 로그인 전에 닿아야 하는 dev 전용 시드 로그인. 라우트 자체가 NODE_ENV/플래그로 이중 게이트됨.
+const PUBLIC_PATHS = ["/healthz", "/login", "/auth/callback", "/auth/otp", "/api/agents/pair", "/api/dev/login"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((publicPath) => pathname === publicPath || pathname.startsWith(`${publicPath}/`));
@@ -40,8 +43,10 @@ function requireDemoPassword(request: NextRequest): NextResponse | null {
 }
 
 export async function updateSession(request: NextRequest) {
+  const isPublic = isPublicPath(request.nextUrl.pathname);
+
   // 1) 데모 비번 게이트가 켜져 있으면 무엇보다 먼저 검사. 틀리면 여기서 401로 끝낸다.
-  const demoGate = requireDemoPassword(request);
+  const demoGate = isPublic ? null : requireDemoPassword(request);
   if (demoGate) {
     return demoGate;
   }
@@ -76,7 +81,7 @@ export async function updateSession(request: NextRequest) {
   const currentPath = `${nextUrl.pathname}${nextUrl.search}`;
 
   // authDisabled가 true면 비로그인 사용자도 막지 않는다(데모 공개용).
-  if (!authDisabled && !user && !isPublicPath(nextUrl.pathname)) {
+  if (!authDisabled && !user && !isPublic) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.search = `?next=${encodeURIComponent(currentPath)}`;

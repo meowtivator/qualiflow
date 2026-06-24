@@ -9,6 +9,9 @@ import type { AlibabaRawConversation, AlibabaRawMessage } from "./raw-types.js";
 
 // 알리바바 메시지 type 코드 1 = 텍스트 (오늘 관찰값). 그 외 타입은 아직 미지원.
 const ALIBABA_TEXT_TYPE = 1;
+// type 2 = 알리바바 시스템 공지(예: "翻译功能升级…" 번역기능 업데이트 안내). 바이어/셀러 대화가 아니라
+// 앱이 끼워넣는 알림이라, 대화·팔로업·요약에서 제외한다. (★업무 규칙: 시스템 메시지는 대화로 안 침)
+const ALIBABA_SYSTEM_TYPE = 2;
 
 // 이 어댑터가 다루는 채널 고정값.
 const CHANNEL_ID = "alibaba";
@@ -91,13 +94,15 @@ export function normalizeAlibabaContact(raw: AlibabaRawConversation): Lead {
     displayName: contact.name ?? contact.loginId ?? "Unknown Alibaba buyer",
     companyName: contact.companyName || undefined,
     countryCode: contact.complianceCountryCode || undefined,
+    profileImageUrl: contact.profileImageUrl || undefined,
     sourceChannelIds: [CHANNEL_ID],
     stage: "new",
     createdAt,
     updatedAt,
     metadata: {
       alibabaAliId: contact.aliId ?? null,
-      alibabaLoginId: contact.loginId ?? null
+      alibabaLoginId: contact.loginId ?? null,
+      alibabaProfileImageUrl: contact.profileImageUrl ?? null
     }
   };
 }
@@ -114,19 +119,22 @@ export function normalizeAlibabaConversation(raw: AlibabaRawConversation): {
   const ownerName = raw.owner.name ?? "운영자";
   const leadName = raw.contact.name ?? raw.contact.loginId ?? "바이어";
 
-  const messages = raw.messages.map((message) =>
-    normalizeAlibabaMessage(message, {
-      ownerAliId: raw.owner.aliId,
-      ownerName,
-      leadId,
-      leadName
-    })
-  );
+  // 시스템 공지(type 2)는 제외하고 실제 대화 메시지만 변환한다.
+  const messages = raw.messages
+    .filter((message) => message.type !== ALIBABA_SYSTEM_TYPE)
+    .map((message) =>
+      normalizeAlibabaMessage(message, {
+        ownerAliId: raw.owner.aliId,
+        ownerName,
+        leadId,
+        leadName
+      })
+    );
 
-  // 대화의 시작/마지막 시간은 메시지들의 sendTime에서 뽑는다.
-  const sendTimes = raw.messages.map((message) => message.sendTime);
-  const firstSentAt = sendTimes.length ? toIso(Math.min(...sendTimes)) : toIso(0);
-  const lastSentAt = sendTimes.length ? toIso(Math.max(...sendTimes)) : firstSentAt;
+  // 대화의 시작/마지막 시간은 (시스템 공지 뺀) 실제 메시지에서 뽑는다.
+  const messageTimes = messages.map((message) => message.sentAt).sort();
+  const firstSentAt = messageTimes[0] ?? toIso(0);
+  const lastSentAt = messageTimes[messageTimes.length - 1] ?? firstSentAt;
   const conversationCode = raw.messages[0]?.conversationCode ?? "unknown";
 
   // ★규칙(F4 팔로업): 마지막 메시지가 고객(inbound)이면 내가 답해야 함, 내가(outbound) 보냈으면 고객 답 대기.

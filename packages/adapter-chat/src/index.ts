@@ -1,6 +1,9 @@
 import {
   BUILT_IN_CHANNELS,
   type BuiltInChannelId,
+  type ChannelAccountKind,
+  type ChannelAuthMode,
+  type ChannelConnectionCapability,
   type ConversationAdapter,
   type Lead,
   type Message,
@@ -10,11 +13,11 @@ import {
   type Thread
 } from "@qualiflow/core";
 
-// 단순 채팅 채널(텔레그램·인스타그램·왓츠앱 등) 공용 어댑터.
+// 사용자 계정 기반 채팅 채널(텔레그램·인스타그램·왓츠앱 등) 공용 어댑터.
 // 알리바바와 달리 이 채널들은 "연락처 + 메시지" 구조가 거의 같아서, 채널마다 따로 만들지 않고
-// channelId로 파라미터화한 하나의 어댑터로 처리한다. 각 채널의 "실제로 메시지를 가져오는
-// 리더"(GramJS/Meta API/Baileys 등)는 인증이 필요해 별도이며, 그 결과를 아래 raw 형태로
-// 맞춰 넣으면 이 어댑터가 core 타입으로 변환한다.
+// channelId로 파라미터화한 하나의 어댑터로 처리한다. 각 채널의 실제 connector
+// (MTProto/TDLib, WhatsApp Web, Instagram session 등)는 인증이 필요해 별도 runtime에 두고,
+// 그 결과를 아래 raw 형태로 맞춰 넣으면 이 어댑터가 core 타입으로 변환한다.
 
 export type ChatRawMessage = {
   id: string;
@@ -29,12 +32,19 @@ export type ChatRawContact = {
   name?: string;
   companyName?: string;
   countryCode?: string;
+  profileImageUrl?: string;
 };
 
 export type ChatRawConversation = {
   threadId: string;
   contact: ChatRawContact;
   messages: ChatRawMessage[];
+};
+
+export type CreateChatAdapterOptions = {
+  accountKind?: ChannelAccountKind;
+  authMode?: ChannelAuthMode;
+  capabilities?: ChannelConnectionCapability[];
 };
 
 function toEntityId(prefix: string, value: string): string {
@@ -68,6 +78,7 @@ export function normalizeChatConversation(
     displayName: raw.contact.name ?? raw.contact.id,
     companyName: raw.contact.companyName || undefined,
     countryCode: raw.contact.countryCode || undefined,
+    profileImageUrl: raw.contact.profileImageUrl || undefined,
     sourceChannelIds: [channelId],
     stage: "new",
     createdAt: firstAt,
@@ -98,7 +109,8 @@ export function normalizeChatConversation(
     visibility: "client_visible",
     author: {
       displayName: message.authorName ?? (message.direction === "outbound" ? "운영자" : (raw.contact.name ?? "고객")),
-      role: message.direction === "outbound" ? "operator" : "lead"
+      role: message.direction === "outbound" ? "operator" : "lead",
+      avatarUrl: message.direction === "inbound" ? raw.contact.profileImageUrl : undefined
     },
     content: { type: "text", text: message.text },
     sentAt: message.sentAt
@@ -118,7 +130,8 @@ function paginate<TItem>(items: TItem[], request?: PageRequest): Page<TItem> {
 
 export function createChatAdapter(
   channelId: BuiltInChannelId,
-  conversations: ChatRawConversation[]
+  conversations: ChatRawConversation[],
+  options: CreateChatAdapterOptions = {}
 ): ConversationAdapter {
   const leads: Lead[] = [];
   const threads: Thread[] = [];
@@ -135,6 +148,19 @@ export function createChatAdapter(
     id: channelId,
     label: BUILT_IN_CHANNELS[channelId].label,
     channel: BUILT_IN_CHANNELS[channelId],
+    accountKind: options.accountKind ?? "user_account",
+    authMode: options.authMode ?? "manual",
+    capabilities: options.capabilities ?? ["read_messages", "send_messages", "sync_history"],
+    sessionStorage: "runtime_only",
+    async syncMessages() {
+      return {
+        leads,
+        threads,
+        messages,
+        syncedAt: new Date().toISOString(),
+        connectionStatus: "active"
+      };
+    },
     async listLeads(request) {
       return paginate(leads, request);
     },
