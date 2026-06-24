@@ -22,9 +22,10 @@ import { dirname, resolve } from "node:path";
 
 import { chromium } from "playwright-core";
 
-import { delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
+import { dataFile, delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
-const CONNECTION_STATUS_FILE = resolve("../../apps/web/.data/alibaba-connection.json");
+// 설치본에선 QUALIFLOW_HOME/.data 로, 개발에선 레포 apps/web/.data 로 떨어진다(cwd-상대 버그 제거).
+const CONNECTION_STATUS_FILE = dataFile("alibaba-connection.json");
 // 로그인 페이지가 아니라 onetalk을 직접 연다. 로그인 안 됐으면 알리바바가 로그인으로 보냈다가
 // 로그인 성공 시 다시 onetalk으로 돌려보낸다(= 로그인 시작점이 onetalk이라 복귀 대상이 생긴다).
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";

@@ -16,7 +16,7 @@ import { dirname, resolve } from "node:path";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
-import { findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
+import { dataFile, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
@@ -395,7 +395,7 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
 // CLI 래퍼: 환경변수로 받아 extractAlibaba 실행 → 파일 저장(standalone inquiry:extract 용).
 async function main() {
   const profileDir = process.env.QUALIFLOW_ALIBABA_PROFILE || resolve("../../.auth/alibaba-chrome-profile");
-  const outputPath = process.env.QUALIFLOW_ALIBABA_OUTPUT || resolve("../../apps/web/.data/alibaba-conversations.json");
+  const outputPath = process.env.QUALIFLOW_ALIBABA_OUTPUT || dataFile("alibaba-conversations.json");
   try {
     const conversations = await extractAlibaba(profileDir);
     if (!conversations.length) {
