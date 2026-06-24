@@ -7,6 +7,10 @@ export type MessageStatus = "draft" | "queued" | "sent" | "delivered" | "read" |
 
 export type MessageVisibility = "internal" | "client_visible";
 
+// 단일출처 계약: DB messages.author(jsonb)에 이 모양({ role, displayName, ... })으로 저장된다.
+//   - writer: ingest_conversations(0011) 가 { role, displayName }을 기록.
+//   - reader: 웹(supabase-conversation-source) / buyer-crm 둘 다 이 모양을 읽는다.
+//   freeform jsonb라 DB CHECK로 강제되진 않으므로, 구버전/누락 시 reader가 방향 기반 기본값으로 폴백한다.
 export type MessageAuthor = {
   id?: EntityId;
   displayName: string;

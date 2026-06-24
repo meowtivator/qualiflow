@@ -33,7 +33,7 @@ type LeadRow = {
   primary_email: string | null;
   profile_image_url: string | null;
   source_channel_ids: string[] | null;
-  lifecycle_stage: string;
+  stage: string;
   sub_stage: string | null;
   created_at: string;
   updated_at: string;
@@ -65,7 +65,9 @@ type MessageRow = {
   direction: string;
   status: string;
   visibility: string;
-  author: { name?: string } | null;
+  // DB messages.author jsonb는 core의 MessageAuthor 모양({ role, displayName })으로 저장된다.
+  // (구버전 데이터엔 비어있을 수 있어 둘 다 optional — 비면 방향 기반 기본값으로 폴백)
+  author: { displayName?: string; role?: string } | null;
   content: { text?: string } | null;
   sent_at: string;
   received_at: string | null;
@@ -81,7 +83,7 @@ function mapLead(row: LeadRow): Lead {
     primaryEmail: row.primary_email ?? undefined,
     profileImageUrl: row.profile_image_url ?? undefined,
     sourceChannelIds: row.source_channel_ids ?? [],
-    stage: row.lifecycle_stage as LeadStage,
+    stage: row.stage as LeadStage,
     subStage: (row.sub_stage as LeadSubStage | null) ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -110,7 +112,15 @@ function mapThread(row: ThreadRow): Thread {
 function mapMessage(row: MessageRow): Message {
   const direction = (row.direction === "outbound" ? "outbound" : "inbound") as MessageDirection;
   const text = typeof row.content?.text === "string" ? row.content.text : "";
-  const authorName = typeof row.author?.name === "string" ? row.author.name : undefined;
+  // core 계약(MessageAuthor)대로 displayName/role을 읽는다. 구버전(빈 author)이면 방향 기반 기본값으로 폴백.
+  const storedName = typeof row.author?.displayName === "string" ? row.author.displayName.trim() : "";
+  const storedRole = row.author?.role;
+  const role: Message["author"]["role"] =
+    storedRole === "lead" || storedRole === "operator" || storedRole === "system"
+      ? storedRole
+      : direction === "inbound"
+        ? "lead"
+        : "operator";
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -121,8 +131,8 @@ function mapMessage(row: MessageRow): Message {
     status: row.status as MessageStatus,
     visibility: row.visibility as MessageVisibility,
     author: {
-      displayName: authorName ?? (direction === "inbound" ? "고객" : "나"),
-      role: direction === "inbound" ? "lead" : "operator"
+      displayName: storedName || (direction === "inbound" ? "고객" : "나"),
+      role
     },
     content: { type: "text", text },
     sentAt: row.sent_at,
