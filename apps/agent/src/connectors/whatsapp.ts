@@ -101,9 +101,19 @@ function extractText(content: WAMessageContent | null | undefined): string {
   );
 }
 
-function displayName(jid: string, contacts: Map<string, Contact>, chats: Map<string, Chat>): string {
+// 이름 우선순위: 저장된 연락처(이름/notify/인증명) → 채팅방 이름 → 상대가 설정한 pushName → jid 번호.
+// ★@lid(WhatsApp의 새 프라이버시 식별자)는 전화번호 jid가 아니라 연락처 맵 조회가 빗나가므로,
+//   상대 메시지에 실려오는 pushName이 사실상 가장 쓸모 있는 이름이 된다.
+function displayName(
+  jid: string,
+  contacts: Map<string, Contact>,
+  chats: Map<string, Chat>,
+  pushName?: string
+): string {
   const contact = contacts.get(jid);
-  return contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? jid.split("@")[0];
+  return (
+    contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? pushName ?? jid.split("@")[0]
+  );
 }
 
 // 이미 저장된 대화를 읽는다(왓츠앱은 페어링 직후 1회만 히스토리를 주므로, 재연결 fetch가 0개일 때
@@ -180,9 +190,11 @@ export async function fetchWhatsApp(
         if (!messages.length) {
           continue;
         }
+        // 상대(inbound)가 보낸 메시지의 pushName을 이름 후보로 뽑는다(연락처 맵이 비었을 때 대비).
+        const pushName = list.find((message) => !message.key?.fromMe && message.pushName)?.pushName ?? undefined;
         conversations.push({
           threadId: jid,
-          contact: { id: jid, name: displayName(jid, contacts, chats) },
+          contact: { id: jid, name: displayName(jid, contacts, chats, pushName) },
           messages
         });
       }
