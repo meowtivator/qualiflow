@@ -8,6 +8,7 @@
 //   pair <코드> | status                (보안 레이어 — 나중)
 
 import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, sessionPath } from "./accounts";
+import { fetchAgentIdentity } from "./api-client";
 import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
 import { loadLocalEnv } from "./env";
@@ -212,11 +213,20 @@ async function main() {
 
     case "status": {
       const token = await loadToken();
-      console.log(
-        token
-          ? "✅ 연결됨 — 에이전트 토큰이 키체인에 있습니다."
-          : "⚠️ 미연결 — 먼저 'pair <코드>'로 페어링하세요."
-      );
+      if (!token) {
+        console.log("⚠️ 미연결 — 먼저 'pair <코드>'로 페어링하세요.");
+        return;
+      }
+      // 토큰 유무만 보지 않고 서버에 신원을 물어 '진짜 연결'을 확인한다(+ 하트비트).
+      const identity = await fetchAgentIdentity();
+      if (identity) {
+        console.log(`✅ 연결됨 — 서버 인증 OK (agentId=${identity.agentId})`);
+      } else {
+        console.log(
+          "⚠️ 토큰은 있으나 서버 인증 실패 — 토큰이 만료/해제됐거나 서버 주소가 틀릴 수 있습니다.\n" +
+            "   QUALIFLOW_CLOUD_URL 확인 후, 필요하면 'pair <코드>'로 다시 페어링하세요."
+        );
+      }
       return;
     }
 
