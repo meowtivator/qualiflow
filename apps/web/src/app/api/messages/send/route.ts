@@ -32,6 +32,10 @@ export async function POST(request: Request) {
   if (!threadId || !text) {
     return NextResponse.json({ ok: false, message: "threadId, text가 필요합니다." }, { status: 400 });
   }
+  // 거대 payload 방지(명령 큐/롱폴 응답 비대화 차단). 일반 메시지엔 충분.
+  if (text.length > 4000) {
+    return NextResponse.json({ ok: false, message: "메시지가 너무 깁니다 (최대 4000자)." }, { status: 400 });
+  }
 
   // thread(RLS로 내 워크스페이스만) → 채널/대상/워크스페이스.
   const { data: thread } = await supabase

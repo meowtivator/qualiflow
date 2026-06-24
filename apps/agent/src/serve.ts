@@ -26,11 +26,24 @@ async function claimCommands(): Promise<AgentCommand[]> {
 }
 
 async function reportResult(commandId: string, status: "done" | "failed", result: Record<string, unknown>): Promise<void> {
-  await authedFetch("/api/agents/commands", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ commandId, status, result })
-  });
+  // 결과 보고는 재시도한다 — 일시적 네트워크 실패로 명령이 'claimed'에 영원히 묶이는 걸(좀비) 줄인다.
+  // (재claim은 안 하므로 보고가 끝내 실패하면 중복발송 대신 '미보고'로 남는다 = 안전한 쪽.)
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await authedFetch("/api/agents/commands", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ commandId, status, result })
+      });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // 다음 시도
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+  }
+  console.error(`  ⚠️ 결과 보고 실패(${commandId.slice(0, 8)}) — 명령이 'claimed'로 남을 수 있습니다(중복발송은 안 됨).`);
 }
 
 async function executeCommand(command: AgentCommand): Promise<void> {

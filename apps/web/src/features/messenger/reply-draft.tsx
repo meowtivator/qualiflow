@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Send, Sparkles } from "lucide-react";
 
 type ReplyDraftProps = {
@@ -29,14 +29,17 @@ export function ReplyDraft(props: ReplyDraftProps) {
   const [draft, setDraft] = useState("");
   const [sendState, setSendState] = useState<SendState>("idle");
   const [sendError, setSendError] = useState("");
+  // 진행 중 요청 가드 — 빠른 더블클릭으로 같은 답장이 두 번 적재(=중복 발송)되는 걸 막는다.
+  const inflightRef = useRef(false);
 
   const canSend = draft.trim().length > 0 && sendState !== "sending";
 
   const handleSend = async () => {
     const text = draft.trim();
-    if (!text) {
+    if (!text || inflightRef.current) {
       return;
     }
+    inflightRef.current = true;
     setSendState("sending");
     setSendError("");
     try {
@@ -56,6 +59,8 @@ export function ReplyDraft(props: ReplyDraftProps) {
     } catch (error) {
       setSendState("error");
       setSendError(error instanceof Error ? error.message : "발송 요청에 실패했습니다.");
+    } finally {
+      inflightRef.current = false;
     }
   };
 
