@@ -10,7 +10,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(here, "../../..");
 
 export function loadLocalEnv(): void {
-  const files = [resolve(REPO_ROOT, "apps/web/.env.local"), resolve(REPO_ROOT, ".env.local")];
+  // 배포본은 QUALIFLOW_HOME/.env.local 을 우선 읽는다(TELEGRAM_* 등). 개발에선 레포의 .env.local.
+  const home = process.env.QUALIFLOW_HOME;
+  const files = [
+    ...(home ? [resolve(home, ".env.local")] : []),
+    resolve(REPO_ROOT, "apps/web/.env.local"),
+    resolve(REPO_ROOT, ".env.local")
+  ];
   for (const file of files) {
     let content: string;
     try {

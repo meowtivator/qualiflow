@@ -23,11 +23,52 @@ launchd plist의 `QUALIFLOW_SYNC_INTERVAL_MS`(ms, 기본 30분)로 조정.
 > ⚠️ 전제: 채널들은 미리 `add <channel> <label>`로 로그인돼 있어야 합니다(로그인 창은 사람이 직접).
 > 데몬은 이미 로그인된 세션으로 동기화만 합니다.
 
+## 단일 번들 (esbuild) — 됨
+
+에이전트 + 워크스페이스 패키지(@qualiflow/*) + telegram을 한 파일로 묶는다. pnpm·워크스페이스
+해석 없이 `node`로 바로 돈다.
+
+```bash
+pnpm --filter @qualiflow/agent bundle      # → apps/agent/dist/agent.mjs (~130kb)
+node apps/agent/dist/agent.mjs accounts    # 번들로 실행
+node apps/agent/dist/agent.mjs fetch all   # 등
+```
+
+⚠️ **현재 한계(배포 전 처리 대상)**:
+- `playwright-core`·`@whiskeysockets/baileys`는 네이티브·동적 require가 많아 **external**(번들에 안 들어감)
+  → 지금은 레포 `node_modules`에서 require. 배포본은 *이 둘 + 의존성만* 담은 작은 node_modules를 동봉하거나,
+  Node SEA로 묶으면서 네이티브를 옆에 둬야 한다.
+- `.auth` / `.data` / `.env.local` 경로가 **번들 위치(레포 구조) 기준**으로 잡힌다(`import.meta.url`).
+  실제 설치본에선 *홈 디렉터리/설정 경로* 기준으로 바꿔야 한다.
+- Node 런타임은 여전히 필요(`.mjs` 실행). 완전 무-Node 단일 바이너리는 Node SEA 단계.
+
+## 배포 폴더 (A안: 번들 + Node 동봉) — 됨
+
+```bash
+pnpm --filter @qualiflow/agent package     # → apps/agent/dist/package/ (~175MB)
+apps/agent/dist/package/run.sh accounts    # 레포·pnpm·시스템 Node 없이 실행
+```
+
+폴더 구성(이게 "설치되는 실체"):
+```
+dist/package/
+  node           # Node 바이너리 동봉 → 시스템 Node 불필요(같은 OS/arch)
+  agent.mjs      # esbuild 번들(에이전트 + 워크스페이스 + telegram)
+  node_modules/  # external(playwright-core, baileys) + 전이 의존성
+  run.sh         # QUALIFLOW_HOME=~/.qualiflow 세팅 후 ./node agent.mjs 실행
+```
+- **데이터/세션은 `QUALIFLOW_HOME`(기본 `~/.qualiflow`)** 에 쌓인다 → 레포 밖에서 동작.
+- **실행 방식**: 사용자가 더블클릭 안 함. 설치마법사가 이 폴더를 숨겨진 위치에 복사 + launchd에
+  `run.sh daemon`을 등록 → 백그라운드 상주. (이 macOS launchd install.sh는 *dev(레포)* 용; 배포본은
+  설치마법사가 같은 launchd 등록을 패키지 경로로.)
+
 ## 다음 단계 (로드맵)
 
-1. **단일 실행본 번들** — 에이전트를 Node 런타임까지 포함한 하나의 실행파일로(크롬은 *사용자 것*을
-   쓰므로 크로미움 번들 불필요). 후보: Node SEA / Electron(트레이 아이콘 + 로그인 창 호스팅까지 필요하면).
-   UI는 클라우드에 있으니 헤드리스 데몬이면 충분 → 가벼운 쪽 우선 검토.
+1. **설치마법사(.dmg/.pkg)** — 위 `dist/package`를 숨겨진 위치(예: `~/Library/Application Support/QualiFlow`)에
+   복사 + launchd 등록(`run.sh daemon`) + 서명 우회 안내. (원하면 폴더를 `.app` 구조로 감싸 아이콘 1개로.)
+2. **Windows** — 같은 패키지(`node.exe` + agent.mjs + node_modules) + 작업 스케줄러 등록 + SmartScreen 우회.
+3. **본인 VPS 연결(서버단)** — 데몬이 바깥으로 상시 연결 → 명령 수신 + 데이터 push → 프론트 표시.
+4. (선택) **Node SEA** — 진짜 단일 실행파일이 꼭 필요하면. 네이티브 동봉·서명 난관 있음(A안으로 충분하면 생략).
 2. **크로스플랫폼 설치본(서명 우회)** — macOS `.dmg/.app`, Windows `.exe/.msi`. **코드 서명 없이** 배포하고,
    첫 실행 시 OS 보안경고를 우회하는 안내를 동봉:
    - macOS: 우클릭 → "열기"(Gatekeeper 우회), 또는 `xattr -dr com.apple.quarantine <앱>`.

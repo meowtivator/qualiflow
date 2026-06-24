@@ -10,8 +10,10 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(here, "../../..");
-const AUTH_ROOT = resolve(REPO_ROOT, ".auth");
-const DATA_ROOT = resolve(REPO_ROOT, "apps/web/.data");
+// 배포본은 QUALIFLOW_HOME(예: ~/.qualiflow)에 세션·데이터를 둔다. 개발에선 레포 기준(하위호환).
+const HOME = process.env.QUALIFLOW_HOME;
+const AUTH_ROOT = HOME ? resolve(HOME, ".auth") : resolve(REPO_ROOT, ".auth");
+const DATA_ROOT = HOME ? resolve(HOME, ".data") : resolve(REPO_ROOT, "apps/web/.data");
 const REGISTRY = resolve(DATA_ROOT, "agent-accounts.json");
 
 export type Account = {

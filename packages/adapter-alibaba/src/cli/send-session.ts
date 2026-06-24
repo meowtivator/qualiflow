@@ -11,7 +11,6 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 
@@ -158,7 +157,8 @@ async function main(): Promise<void> {
   }
 }
 
-// 이 파일을 직접 실행할 때만 CLI 동작(에이전트가 함수로 import할 땐 안 돈다).
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// 이 파일을 직접 실행할 때만 CLI 동작(import/번들 시엔 안 돈다 — 파일명으로 판별해 번들에서도 안전).
+const entryFile = process.argv[1] ?? "";
+if (entryFile.endsWith("send-session.ts") || entryFile.endsWith("send-session.js")) {
   await main();
 }
