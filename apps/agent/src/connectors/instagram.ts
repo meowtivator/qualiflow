@@ -9,7 +9,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { access } from "node:fs/promises";
 
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
+import type { MessageAttachment } from "@qualiflow/core";
 import { chromium, type Page } from "playwright-core";
+
+import { cacheMedia, fetchUrlBytes } from "../media";
 
 const DEBUG_PORT = 9223;
 const INBOX_URL = "https://www.instagram.com/direct/inbox/";
@@ -54,7 +57,35 @@ async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
   return false;
 }
 
-type IgItem = { item_id?: string; item_type?: string; text?: string; timestamp?: number | string; user_id?: number | string };
+// IG 미디어 노드(이미지 후보/영상 버전)는 여러 래퍼(media / visual_media / clip) 아래 같은 모양으로 반복된다.
+//   image_versions2.candidates[].url = 화질별 이미지 URL, video_versions[].url = 화질별 영상 URL.
+//   응답 모양이 자주 바뀌므로 전부 옵셔널로 두고 "있으면 첫 URL" 식으로만 읽는다(permissive).
+type IgMediaNode = {
+  image_versions2?: { candidates?: { url?: string }[] };
+  video_versions?: { url?: string }[];
+};
+type IgItem = {
+  item_id?: string;
+  item_type?: string;
+  text?: string;
+  timestamp?: number | string;
+  user_id?: number | string;
+  media?: IgMediaNode; // 일반 사진/영상
+  visual_media?: { media?: IgMediaNode }; // 사라지는(once-view) 사진/영상
+  clip?: { clip?: { video_versions?: { url?: string }[] } }; // 릴스/클립 공유
+};
+
+// item에서 받을 수 있는 첫 CDN URL을 고른다(이미지>영상 순, 래퍼별로 흔한 모양을 차례로 시도). 없으면 undefined.
+function extractIgMediaUrl(item: IgItem): string | undefined {
+  return (
+    item.media?.image_versions2?.candidates?.[0]?.url ??
+    item.media?.video_versions?.[0]?.url ??
+    item.visual_media?.media?.image_versions2?.candidates?.[0]?.url ??
+    item.visual_media?.media?.video_versions?.[0]?.url ??
+    item.clip?.clip?.video_versions?.[0]?.url ??
+    undefined
+  );
+}
 type IgThread = {
   thread_id?: string;
   thread_title?: string;
@@ -201,15 +232,37 @@ export async function fetchInstagram(profileDir: string): Promise<ChatRawConvers
     for (const thread of threads) {
       const messages: ChatRawMessage[] = [];
       for (const item of thread.items ?? []) {
-        if (item.item_type !== "text" || !item.text) {
-          continue; // 텍스트 메시지만(미디어/공유 등은 건너뜀)
+        const text = item.text ?? "";
+        // 텍스트가 아니면(또는 텍스트가 비었으면) 미디어 URL이 있는지 보고, 있으면 받아서 첨부로 만든다.
+        // ★IG CDN URL은 만료되므로 지금(fetch 시점) 바이트로 받아 영구화한다.
+        let attachment: MessageAttachment | undefined;
+        if (item.item_type !== "text") {
+          const mediaUrl = extractIgMediaUrl(item);
+          if (mediaUrl) {
+            try {
+              const got = await fetchUrlBytes(mediaUrl); // CDN URL → 바이트(+MIME). 실패/과대면 null.
+              if (got) {
+                attachment = await cacheMedia({
+                  key: `instagram_${item.item_id ?? `${thread.thread_id}-${item.timestamp ?? ""}`}_0`,
+                  bytes: got.bytes,
+                  mimeType: got.mimeType
+                });
+              }
+            } catch {
+              // 다운로드 실패 — 미디어는 건너뛰되 나머지는 계속.
+            }
+          }
+        }
+        if (!text && !attachment) {
+          continue; // 텍스트도 받을 미디어도 없으면 건너뜀(예: 좋아요/시스템 이벤트, 추출 불가 공유)
         }
         const tsMicro = Number(item.timestamp ?? 0);
         messages.push({
           id: String(item.item_id ?? `${thread.thread_id}-${tsMicro}`),
-          text: item.text,
+          text,
           sentAt: new Date(Math.round(tsMicro / 1000)).toISOString(), // IG는 마이크로초
-          direction: String(item.user_id ?? "") === viewerPk ? "outbound" : "inbound"
+          direction: String(item.user_id ?? "") === viewerPk ? "outbound" : "inbound",
+          ...(attachment ? { attachments: [attachment] } : {})
         });
       }
       if (!messages.length) {

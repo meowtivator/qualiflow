@@ -5,10 +5,12 @@
 
 import { readFile } from "node:fs/promises";
 
+import type { MessageAttachment } from "@qualiflow/core";
 import { alibabaToIngestConversations } from "@qualiflow/adapter-alibaba/runtime";
 
 import { dataFile, listAccounts } from "./accounts";
 import { authedFetch } from "./api-client";
+import { uploadPendingAttachments } from "./media";
 
 type NormalizedConversation = {
   threadId?: string;
@@ -54,6 +56,18 @@ const NORMALIZERS: Record<string, (raw: unknown) => NormalizedConversation[]> = 
   alibaba: (raw) => alibabaToIngestConversations(raw as never)
 };
 
+// 대화들의 메시지마다 pending 첨부를 업로드해 stored URL로 바꾼다(없으면 그대로). 미디어 없는 푸시엔 영향 없음.
+async function resolveConversationMedia(channel: string, conversations: NormalizedConversation[]): Promise<void> {
+  for (const conversation of conversations) {
+    for (const message of conversation.messages ?? []) {
+      const attachments = message.attachments;
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        message.attachments = await uploadPendingAttachments(channel, attachments as MessageAttachment[]);
+      }
+    }
+  }
+}
+
 async function pushAccount(channel: string, label: string): Promise<PushResult> {
   const raw = await readConversations(channel, label);
   if (raw === null) {
@@ -64,6 +78,8 @@ async function pushAccount(channel: string, label: string): Promise<PushResult> 
   if (!conversations || conversations.length === 0) {
     return { channel, label, status: "skipped", detail: "정규화 결과 없음/미지원 형태" };
   }
+  // 미디어: 메시지의 pending 첨부(로컬 캐시)를 서버로 올려 stored URL로 갱신한 뒤 ingest로 보낸다.
+  await resolveConversationMedia(channel, conversations);
   try {
     const response = await authedFetch("/api/agents/ingest", {
       method: "POST",
