@@ -16,6 +16,7 @@ const PUBLIC_PATHS = [
   "/api/agents/me",
   "/api/agents/ingest",
   "/api/agents/commands",
+  "/api/agents/media-upload",
   "/api/dev/login"
 ];
 
