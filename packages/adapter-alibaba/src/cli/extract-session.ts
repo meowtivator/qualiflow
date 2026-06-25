@@ -20,11 +20,14 @@ import { dataFile, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
-const MAX_CONVERSATIONS = 30;
+// 한 번에 추출할 최대 대화(바이어) 수. 기본 200으로 상향(예전 30은 너무 낮아 바이어가 잘렸다).
+// 바이어가 더 많으면 QUALIFLOW_ALIBABA_MAX_CONV로 올린다. ★주의: 대화당 메시지까지 깊게 긁어 수백이면 fetch가 오래 걸림.
+const MAX_CONVERSATIONS = Number(process.env.QUALIFLOW_ALIBABA_MAX_CONV) || 200;
 const OPEN_TIMEOUT_MS = 10_000; // 한 대화를 열고 그 대화 메시지가 fiber에 뜰 때까지 최대 대기
 const POLL_MS = 400; // 폴링 간격
 const MAX_SCROLLS = 60; // 한 대화에서 위로 스크롤하며 옛 메시지를 끌어올 최대 횟수(폭주 방지 상한)
-const MAX_LIST_SCROLLS = 40; // 연락처 목록을 아래로 스크롤하며 더 많은 바이어를 불러올 최대 횟수(폭주 방지 상한)
+// 연락처 목록을 아래로 스크롤하며 더 많은 바이어를 불러올 최대 횟수. 기본 150(바이어 수백 대비 상향).
+const MAX_LIST_SCROLLS = Number(process.env.QUALIFLOW_ALIBABA_MAX_LIST_SCROLLS) || 150;
 const SCROLL_WAIT_MS = 800; // 한 번 스크롤한 뒤 옛 메시지가 그려지거나(가상 리스트) 불러와질(지연 로딩) 때까지 대기
 
 const INBOX_READY_TIMEOUT_MS = 40_000; // 대화 목록이 뜰 때까지 최대 대기
