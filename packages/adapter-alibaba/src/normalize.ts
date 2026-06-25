@@ -171,7 +171,14 @@ export function normalizeAlibabaConversation(raw: AlibabaRawConversation): {
 
 export type AlibabaIngestConversation = {
   threadId: string;
-  contact: { id: string; name?: string; handle?: string };
+  contact: {
+    id: string;
+    name?: string;
+    handle?: string;
+    companyName?: string;
+    countryCode?: string;
+    profileImageUrl?: string;
+  };
   messages: Array<{
     id: string;
     text: string;
@@ -212,7 +219,11 @@ export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): Ali
       contact: {
         id: externalId,
         name: conversation.contact.name ?? conversation.contact.loginId,
-        handle: conversation.contact.loginId
+        handle: conversation.contact.loginId,
+        // 강화 필드(있을 때만 — 알리바바 raw에 존재). 서버 ingest가 leads.company_name/country_code/profile_image_url에 채운다.
+        companyName: conversation.contact.companyName || undefined,
+        countryCode: conversation.contact.complianceCountryCode || undefined,
+        profileImageUrl: conversation.contact.profileImageUrl || undefined
       },
       messages
     };
