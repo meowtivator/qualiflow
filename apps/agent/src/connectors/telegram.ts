@@ -9,9 +9,12 @@ import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
 
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
-import { TelegramClient } from "telegram";
+import type { MessageAttachment } from "@qualiflow/core";
+import { Api, TelegramClient } from "telegram";
 import { LogLevel } from "telegram/extensions/Logger";
 import { StringSession } from "telegram/sessions";
+
+import { cacheMedia } from "../media";
 
 const TELEGRAM_HISTORY_LIMIT = Number(process.env.QUALIFLOW_TG_HISTORY) || 100; // 대화당 최근 메시지 수
 
@@ -70,6 +73,42 @@ export async function loginTelegram(sessionDir: string): Promise<void> {
   await client.destroy(); // ★disconnect()는 업데이트 루프를 안 멈춤(while !_destroyed) → destroy()로 완전 정리
 }
 
+// 한 메시지의 미디어(사진/문서 등)를 바이트로 받아 pending 첨부 1개로 만든다. 미디어 없거나
+// 다운로드 실패면 undefined(텍스트 경로는 그대로). ★실패해도 throw하지 않아 한 건 때문에 전체 fetch가 멈추지 않는다.
+async function buildTelegramAttachment(
+  client: TelegramClient,
+  message: Api.Message
+): Promise<MessageAttachment | undefined> {
+  if (!message.media) {
+    return undefined; // 미디어 없는 순수 텍스트 메시지
+  }
+  try {
+    // client.downloadMedia: 사진/문서 모두 처리, Buffer|string|undefined 반환 → Buffer일 때만 진행.
+    const downloaded = await client.downloadMedia(message);
+    if (!Buffer.isBuffer(downloaded)) {
+      return undefined;
+    }
+    const doc = message.document; // 문서(=동영상/오디오/파일)면 여기에 mimeType과 attributes가 있다.
+    // 사진은 항상 jpeg, 문서는 서버가 준 mimeType, 둘 다 아니면(스티커 등) 일반 바이너리로.
+    const mimeType = message.photo
+      ? "image/jpeg"
+      : (doc?.mimeType ?? "application/octet-stream");
+    // 파일명은 문서의 DocumentAttributeFilename 속성에서만 얻을 수 있다(없으면 cacheMedia가 key로 대체).
+    const fileNameAttr = doc?.attributes.find(
+      (attr): attr is Api.DocumentAttributeFilename => attr instanceof Api.DocumentAttributeFilename
+    );
+    return await cacheMedia({
+      key: `telegram_${message.id}_0`,
+      bytes: downloaded,
+      mimeType,
+      fileName: fileNameAttr?.fileName,
+      caption: message.message || undefined
+    });
+  } catch {
+    return undefined; // 다운로드 실패 — 미디어는 건너뛰되 나머지는 계속.
+  }
+}
+
 // 저장된 세션으로 연결해 인박스를 읽어 ChatRawConversation[]로 정규화한다.
 export async function fetchTelegram(sessionDir: string): Promise<ChatRawConversation[]> {
   const { apiId, apiHash } = getApiCreds();
@@ -98,15 +137,17 @@ export async function fetchTelegram(sessionDir: string): Promise<ChatRawConversa
       const rawMessages = await client.getMessages(entity, { limit: TELEGRAM_HISTORY_LIMIT });
       const messages: ChatRawMessage[] = [];
       for (const message of rawMessages) {
-        const text = message.message ?? "";
-        if (!text) {
-          continue; // 텍스트 없는(미디어 등) 메시지는 건너뜀
+        const text = message.message ?? ""; // 미디어의 캡션도 여기에 담긴다.
+        const attachment = await buildTelegramAttachment(client, message);
+        if (!text && !attachment) {
+          continue; // 텍스트도 첨부도 없으면(예: 다운로드 실패한 미디어, 서비스 메시지) 건너뜀
         }
         messages.push({
           id: String(message.id),
           text,
           sentAt: new Date(message.date * 1000).toISOString(),
-          direction: message.out ? "outbound" : "inbound"
+          direction: message.out ? "outbound" : "inbound",
+          ...(attachment ? { attachments: [attachment] } : {})
         });
       }
       if (!messages.length) {

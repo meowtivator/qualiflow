@@ -12,8 +12,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
+import type { MessageAttachment } from "@qualiflow/core";
 import makeWASocket, {
   DisconnectReason,
+  downloadMediaMessage,
   jidNormalizedUser,
   useMultiFileAuthState,
   type Chat,
@@ -22,6 +24,8 @@ import makeWASocket, {
   type WAMessageContent
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
+
+import { cacheMedia } from "../media";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // src/connectors/ → 네 단계 위가 레포 루트
@@ -101,6 +105,42 @@ function extractText(content: WAMessageContent | null | undefined): string {
   );
 }
 
+// 한 메시지에 사진/영상/문서/오디오가 있으면 바이트를 받아 pending 첨부 1개로 만든다.
+// 미디어 없거나 다운로드 실패면 undefined. ★throw하지 않아 한 건 실패가 전체 동기화를 막지 않는다.
+//   messageId: cacheMedia key를 전역 유니크하게 만들기 위해 호출부가 정한 메시지 id를 그대로 받는다
+//   (key.id가 null일 수 있어 텍스트 경로와 같은 fallback 값을 쓴다).
+async function buildWhatsAppAttachment(
+  message: WAMessage,
+  messageId: string
+): Promise<MessageAttachment | undefined> {
+  const content = message.message;
+  // 우리가 영구화하는 4종(이미지/영상/문서/오디오) 중 실린 노드를 고른다. 그 외(텍스트/통화/시스템)는 미디어 아님.
+  const media =
+    content?.imageMessage ??
+    content?.videoMessage ??
+    content?.documentMessage ??
+    content?.audioMessage;
+  if (!media) {
+    return undefined;
+  }
+  try {
+    // downloadMediaMessage: WAMessage를 받아 암호화된 미디어를 풀어 Buffer로 준다("buffer" 지정).
+    const bytes = await downloadMediaMessage(message, "buffer", {});
+    const mimeType = media.mimetype ?? "application/octet-stream"; // 노드가 준 MIME(예: image/jpeg)
+    // 캡션은 이미지/영상/문서에만 있다(오디오엔 없음). 문서만 원본 파일명을 갖는다.
+    const caption = content?.imageMessage?.caption ?? content?.videoMessage?.caption ?? content?.documentMessage?.caption ?? undefined;
+    return await cacheMedia({
+      key: `whatsapp_${messageId}_0`,
+      bytes,
+      mimeType,
+      fileName: content?.documentMessage?.fileName ?? undefined,
+      caption
+    });
+  } catch {
+    return undefined; // 다운로드 실패 — 미디어는 건너뛰되 나머지는 계속.
+  }
+}
+
 // 이름 우선순위: 저장된 연락처(이름/notify/인증명) → 채팅방 이름 → 상대가 설정한 pushName → jid 번호.
 // ★@lid(WhatsApp의 새 프라이버시 식별자)는 전화번호 jid가 아니라 연락처 맵 조회가 빗나가므로,
 //   상대 메시지에 실려오는 pushName이 사실상 가장 쓸모 있는 이름이 된다.
@@ -176,15 +216,27 @@ export async function fetchWhatsApp(
         if (jid.endsWith("@broadcast")) {
           continue; // 상태(스토리) 등 제외
         }
-        const messages: ChatRawMessage[] = list
-          .map((message) => ({
-            id: message.key?.id ?? `${jid}-${String(message.messageTimestamp ?? "")}`,
-            text: extractText(message.message),
-            sentAt: new Date(Number(message.messageTimestamp ?? 0) * 1000).toISOString(),
-            direction: message.key?.fromMe ? ("outbound" as const) : ("inbound" as const),
-            authorName: message.pushName ?? undefined
-          }))
-          .filter((message) => message.text)
+        // 각 메시지를 텍스트로 변환하면서 미디어가 있으면 다운로드해 첨부를 붙인다(다운로드는 비동기 → Promise.all).
+        const built = await Promise.all(
+          list.map(async (message): Promise<ChatRawMessage | undefined> => {
+            const id = message.key?.id ?? `${jid}-${String(message.messageTimestamp ?? "")}`;
+            const text = extractText(message.message); // 미디어 캡션도 여기에 포함된다.
+            const attachment = await buildWhatsAppAttachment(message, id);
+            if (!text && !attachment) {
+              return undefined; // 텍스트도 첨부도 없으면(통화/시스템/다운로드 실패) 버린다 — 기존 텍스트 필터와 동일한 효과.
+            }
+            return {
+              id,
+              text,
+              sentAt: new Date(Number(message.messageTimestamp ?? 0) * 1000).toISOString(),
+              direction: message.key?.fromMe ? ("outbound" as const) : ("inbound" as const),
+              authorName: message.pushName ?? undefined,
+              ...(attachment ? { attachments: [attachment] } : {})
+            };
+          })
+        );
+        const messages: ChatRawMessage[] = built
+          .filter((message): message is ChatRawMessage => message !== undefined)
           .sort((a, b) => a.sentAt.localeCompare(b.sentAt));
 
         if (!messages.length) {
