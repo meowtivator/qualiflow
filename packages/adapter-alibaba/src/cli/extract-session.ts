@@ -260,7 +260,9 @@ function buildReadRowProfileImageScript(cid: string | null, index: number) {
 
       for (const candidate of candidates) {
         const url = absolutize(candidate);
-        if (url && /^https?:\/\//.test(url)) return url;
+        // ★등급/인증 뱃지(예: imgextra ...tps-136-80.png) 제외 — 아바타가 아니라 공용 아이콘이라 여러 바이어가 같은 이미지를
+        //   쓰게 된다. 아바타 없으면 undefined로 두고 이니셜 폴백. (진짜 아바타는 sc04/kf의 정사각 .jpg)
+        if (url && /^https?:\/\//.test(url) && !/[-_]\d+[-x]\d+\.(png|webp)/i.test(url)) return url;
       }
 
       return undefined;

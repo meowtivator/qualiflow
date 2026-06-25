@@ -223,7 +223,11 @@ export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): Ali
         // 강화 필드(있을 때만 — 알리바바 raw에 존재). 서버 ingest가 leads.company_name/country_code/profile_image_url에 채운다.
         companyName: conversation.contact.companyName || undefined,
         countryCode: conversation.contact.complianceCountryCode || undefined,
-        profileImageUrl: conversation.contact.profileImageUrl || undefined
+        // ★등급/인증 뱃지(imgextra ...tps-WxH.png) 제외 — 아바타가 아니라 공용 아이콘. 없으면 undefined(이니셜 폴백).
+        profileImageUrl:
+          conversation.contact.profileImageUrl && !/[-_]\d+[-x]\d+\.(png|webp)/i.test(conversation.contact.profileImageUrl)
+            ? conversation.contact.profileImageUrl
+            : undefined
       },
       messages
     };
