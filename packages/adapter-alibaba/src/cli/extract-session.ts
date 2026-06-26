@@ -215,6 +215,72 @@ const EXTRACT_CALL = `(${EXTRACT_IN_PAGE})()`;
 const SCROLL_CALL = `(${SCROLL_UP_IN_PAGE})()`;
 const SCROLL_LIST_DOWN_CALL = `(${SCROLL_LIST_DOWN_IN_PAGE})()`;
 
+// 🔎 등급 프로브(진단 전용): 연락처 목록 첫 N행의 React 내부 데이터(memoizedProps)에서 스칼라 필드를
+//    "있는 그대로" 떠낸다. 등급(L1~L4)은 뱃지 이미지가 아니라 이 데이터의 어떤 필드(buyerLevel/level/
+//    grade/vipLevel 등)일 확률이 높으므로, 추측 없이 전부 덤프해 사람이 어느 필드가 등급인지 지목하게 한다.
+//    해석/매핑은 하지 않는다(읽기 전용). ALIBABA_PROBE 환경변수일 때만 호출된다.
+const PROBE_IN_PAGE = String.raw`
+() => {
+  function fiberKey(el) {
+    return Object.keys(el).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+  }
+  // 객체에서 스칼라(문자열/숫자/불리언) 잎값을 depth 단계까지 모은다(중첩 객체는 한 단계 더 들어간다).
+  function scalars(obj, depth) {
+    const out = {};
+    if (!obj || typeof obj !== "object") return out;
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (v === null || v === undefined) continue;
+      const t = typeof v;
+      if (t === "string" || t === "number" || t === "boolean") out[k] = v;
+      else if (t === "object" && !Array.isArray(v) && depth > 1) {
+        const sub = scalars(v, depth - 1);
+        if (Object.keys(sub).length) out[k] = sub;
+      }
+    }
+    return out;
+  }
+  const KEYS = ["itemData","data","item","contact","record","buyer","conversation","customer","info","detail","rowData","node","value","props"];
+  const rows = Array.from(document.querySelectorAll(".contact-item-container")).slice(0, 5);
+  const dump = [];
+  for (const row of rows) {
+    const entry = { dataset: {}, imgs: [], fiber: {} };
+    for (const a of Array.from(row.attributes)) {
+      if (a.name.indexOf("data-") === 0) entry.dataset[a.name] = a.value;
+    }
+    // 행 안의 모든 이미지 URL(아바타 + 등급/인증 뱃지). 등급이 React 데이터가 아니라 뱃지 URL에만
+    // 인코딩돼 있어도, 5개 행(등급이 다르면)을 비교하면 어떤 URL이 등급인지 드러난다.
+    for (const im of Array.from(row.querySelectorAll("img"))) {
+      if (im.src) entry.imgs.push(im.src);
+    }
+    const k = fiberKey(row);
+    if (k) {
+      let fiber = row[k];
+      let hops = 0;
+      while (fiber && hops < 12) {
+        const p = fiber.memoizedProps;
+        if (p && typeof p === "object") {
+          for (const key of KEYS) {
+            if (p[key] && typeof p[key] === "object" && !entry.fiber[key]) {
+              entry.fiber[key] = scalars(p[key], 2);
+            }
+          }
+          if (!entry.fiber.__topProps) {
+            const top = scalars(p, 1);
+            if (Object.keys(top).length) entry.fiber.__topProps = top;
+          }
+        }
+        fiber = fiber.return;
+        hops += 1;
+      }
+    }
+    dump.push(entry);
+  }
+  return { rowCount: rows.length, rows: dump };
+}
+`;
+const PROBE_CALL = `(${PROBE_IN_PAGE})()`;
+
 // 연락처 행에서 (a)아바타 URL 과 (b)등급 뱃지 URL 을 둘 다 읽어 { avatarUrl, gradeBadgeUrl } 로 반환한다.
 //   - 아바타: imgextra 규격 뱃지(...tps-WxH.png)를 '제외'한 진짜 사진 URL(없으면 undefined → 이니셜 폴백).
 //   - 등급 뱃지: 그 '제외했던' 규격 뱃지 URL 첫 번째(있으면). 여기선 등급으로 해석하지 않고 URL만 들고 나온다.
@@ -338,6 +404,26 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
   await page
     .evaluate(`document.querySelectorAll(".im-next-overlay-wrapper").forEach((el) => el.remove())`)
     .catch(() => undefined);
+
+  // 🔎 등급 프로브(ALIBABA_PROBE 일 때만): 목록 첫 행들의 React 데이터를 파일로 덤프한다. 등급 필드명을
+  //    라이브에서 한 번 확인하기 위한 1회성 진단(읽기 전용). ALIBABA_PROBE=only 면 프로브만 하고 끝낸다.
+  if (process.env.ALIBABA_PROBE) {
+    try {
+      const probe = await page.evaluate(PROBE_CALL).catch(() => null);
+      const probePath = dataFile("alibaba-grade-probe.json");
+      await mkdir(dirname(probePath), { recursive: true });
+      await writeFile(probePath, JSON.stringify(probe, null, 2), "utf8");
+      console.log(`🔎 등급 프로브 저장됨: ${probePath}`);
+      console.log("   이 파일을 그대로 두면(또는 공유하면) 등급이 어느 필드인지 찾아 매핑을 완성합니다.");
+    } catch (error) {
+      console.log("등급 프로브 실패(무시하고 진행):", error);
+    }
+    if (process.env.ALIBABA_PROBE === "only") {
+      await browser.close();
+      chrome.kill("SIGTERM");
+      return [];
+    }
+  }
 
   const conversations: AlibabaRawConversation[] = [];
   const seenCodes = new Set<string>(); // 이미 push한 conversationCode
