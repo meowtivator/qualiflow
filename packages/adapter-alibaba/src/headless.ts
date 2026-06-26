@@ -1,5 +1,6 @@
 import type { AlibabaDiscoveryCandidate, AlibabaDiscoveryTarget, AlibabaInboundBuyer } from "./index.js";
 import { buildAlibabaDiscoveryCandidates } from "./index.js";
+import type { AlibabaContactMetadata } from "./normalize.js";
 import { URL } from "node:url";
 
 type AnchorLink = {
@@ -189,4 +190,65 @@ export async function runAlibabaHeadlessDiscovery(
   } finally {
     await browser.close();
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// SNS 디스커버리 통합 지점 (company+country → 후보 instagram/linkedin/facebook URL).
+//
+// ⚠️ 라이브 브라우저가 있어야 동작한다(웹 검색 페이지를 실제로 연다). 그래서 이 함수는
+//    "통합 지점"으로만 둔다 — 라이브 세션이 없는 환경에선 호출하지 않는다(빈 결과를 가짜로 채우지 않음).
+//
+// 어떻게 끼우나(invocation):
+//   추출(extractAlibaba)로 바이어 목록을 얻은 뒤, 라이브 브라우저가 가능한 에이전트(Node) 쪽에서
+//   바이어별로 1회 호출한다. 반환된 sns 를 그 바이어의 ingest contact.metadata.sns 로 합쳐
+//   서버 ingest_conversations 가 leads.lead_metadata 에 병합하게 한다. 예시(에이전트 push 흐름):
+//
+//     const sns = await discoverBuyerSns(
+//       { company: c.contact.companyName, country: c.contact.complianceCountryCode, buyerName: c.contact.name },
+//       { headless: true }
+//     );
+//     // 그런 다음 alibabaToIngestConversations 결과의 해당 contact.metadata 에 { sns } 를 머지.
+//
+// ★지금은 normalize 단계에서 자동 호출하지 않는다(브라우저가 없을 수 있고, 바이어 수백 명에
+//   per-buyer 검색은 차단 위험·시간이 큼). 호출 정책(언제/몇 명에게)은 에이전트가 정한다.
+export type DiscoverBuyerSnsInput = {
+  company?: string;
+  country?: string;
+  buyerName?: string;
+};
+
+// 검색 대상 → metadata.sns 키 매핑. web 후보는 SNS 칸에 안 넣는다(별도 사이트).
+const SNS_TARGET_TO_KEY: Partial<Record<AlibabaDiscoveryTarget, keyof NonNullable<AlibabaContactMetadata["sns"]>>> = {
+  instagram: "instagram",
+  linkedin: "linkedin",
+  facebook: "facebook"
+};
+
+// 한 바이어에 대해 디스커버리를 돌려 후보 SNS URL을 고른다(각 채널당 첫 매치 1개).
+// 매치가 하나도 없으면 undefined(→ metadata.sns 미포함). 절대 추측 URL을 만들지 않는다.
+export async function discoverBuyerSns(
+  input: DiscoverBuyerSnsInput,
+  options: AlibabaHeadlessDiscoveryOptions = {}
+): Promise<NonNullable<AlibabaContactMetadata["sns"]> | undefined> {
+  // buildAlibabaDiscoveryCandidates 가 기대하는 최소 buyer 형태로 변환(검색에 쓰는 필드만 채움).
+  const buyer: AlibabaInboundBuyer = {
+    externalLeadId: input.buyerName || input.company || "unknown",
+    buyerName: input.buyerName || input.company || "",
+    companyName: input.company,
+    countryCode: input.country,
+    receivedAt: new Date(0).toISOString()
+  };
+
+  const [report] = await runAlibabaHeadlessDiscovery([buyer], options);
+  if (!report) return undefined;
+
+  const sns: NonNullable<AlibabaContactMetadata["sns"]> = {};
+  for (const result of report.results) {
+    const key = SNS_TARGET_TO_KEY[result.candidate.target];
+    if (!key || result.status !== "matched") continue;
+    const firstUrl = result.matches[0]?.url;
+    if (firstUrl && !sns[key]) sns[key] = firstUrl; // 채널당 첫 매치만(가장 위 검색결과).
+  }
+
+  return Object.keys(sns).length > 0 ? sns : undefined;
 }

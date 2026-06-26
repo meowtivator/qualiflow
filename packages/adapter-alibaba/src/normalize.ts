@@ -169,6 +169,21 @@ export function normalizeAlibabaConversation(raw: AlibabaRawConversation): {
 // contact.id = 채널 외부키(aliId) — 서버가 channel_identity 매칭/멱등에 쓴다.
 // ────────────────────────────────────────────────────────────────────────
 
+// 서버 ingest_conversations 가 leads.lead_metadata(jsonb)로 그대로 병합하는 enrichment 묶음.
+// ★값이 있는 키만 넣는다(빈 칸은 생략) — 그래야 jsonb merge가 기존 값을 빈 값으로 덮어쓰지 않는다.
+export type AlibabaContactMetadata = {
+  // 구매 등급(L1~L4). 라이브 매핑 확정 전엔 채우지 않는다(절대 지어내지 않음).
+  alibabaGrade?: string;
+  // 등급 판정 근거가 된 뱃지 이미지 URL(있을 때만). 매핑 확정 전까지 이 원본을 보존해 둔다.
+  alibabaGradeBadgeUrl?: string;
+  // 디스커버리(웹 검색)로 찾은 후보 SNS. 라이브 fetch가 돌기 전까지는 비워 둔다.
+  sns?: {
+    instagram?: string;
+    linkedin?: string;
+    facebook?: string;
+  };
+};
+
 export type AlibabaIngestConversation = {
   threadId: string;
   contact: {
@@ -178,6 +193,8 @@ export type AlibabaIngestConversation = {
     companyName?: string;
     countryCode?: string;
     profileImageUrl?: string;
+    // 알리바바 enrichment(등급/SNS). 서버가 leads.lead_metadata 에 병합. 값 있을 때만 동봉.
+    metadata?: AlibabaContactMetadata;
   };
   messages: Array<{
     id: string;
@@ -194,6 +211,47 @@ function htmlToText(html: string): string {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .trim();
+}
+
+// 등급 뱃지 이미지 URL → 구매 등급(L1~L4) 해석 스텁.
+// ⚠️ 아직 "어떤 뱃지 URL이 어떤 등급인지" 매핑이 확정되지 않았다 → 항상 undefined 를 돌려준다.
+//    NEVER 등급 값을 지어내지 않는다(undefined = "아직 모름"이지 "등급 없음"이 아니다).
+//
+// LIVE-VERIFY (라이브 알리바바 OneTalk 연락처 목록에서 확인할 것):
+//   1) 연락처 행(.contact-item-container) 안에서 "구매 등급(L1/L2/L3/L4)"을 나타내는 게
+//      정확히 어느 <img> 인지(인증/회사규모 등 다른 뱃지와 구분). 그 img 의 실제 src 를 그대로 적어둘 것.
+//   2) 그 URL이 등급을 어떻게 인코딩하는지: (a) 파일명/경로의 토큰(예: ...grade-l3...?),
+//      (b) tps-WxH 의 크기값, (c) 쿼리스트링, (d) 아니면 URL이 아니라 React fiber props
+//      (예: itemData.contact.buyerLevel / purchaseGrade 같은 필드)에 등급이 들어오는지.
+//   3) 위에서 "URL이 아니라 fiber props에 등급이 직접 있다"면, 그 필드를 raw-types/extract에서
+//      집어와 여기 대신 그 값을 쓰도록 바꾼다(URL 추론보다 그게 정확). 그전까진 절대 추정 매핑을 넣지 않는다.
+export function parseAlibabaGrade(_badgeUrl: string | undefined): string | undefined {
+  // 매핑 미확정 → 항상 undefined. (badgeUrl 원본은 metadata.alibabaGradeBadgeUrl 로 따로 보존한다.)
+  return undefined;
+}
+
+// contact.metadata(enrichment) 묶음을 '값 있는 키만' 채워 만든다. 아무 값도 없으면 undefined.
+//   → undefined면 ingest DTO에 metadata 키 자체를 안 넣어, 서버 jsonb merge가 빈 객체를 안 흘린다.
+function buildContactMetadata(args: {
+  gradeBadgeUrl?: string;
+  sns?: AlibabaContactMetadata["sns"];
+}): AlibabaContactMetadata | undefined {
+  const metadata: AlibabaContactMetadata = {};
+
+  const grade = parseAlibabaGrade(args.gradeBadgeUrl);
+  if (grade) metadata.alibabaGrade = grade; // 라이브 매핑 확정 전엔 parseAlibabaGrade가 undefined라 안 들어감.
+  if (args.gradeBadgeUrl) metadata.alibabaGradeBadgeUrl = args.gradeBadgeUrl;
+
+  // SNS는 디스커버리(웹 검색)가 라이브로 돌아 채워질 때만 들어온다. 빈 객체는 넣지 않는다.
+  if (args.sns) {
+    const sns: NonNullable<AlibabaContactMetadata["sns"]> = {};
+    if (args.sns.instagram) sns.instagram = args.sns.instagram;
+    if (args.sns.linkedin) sns.linkedin = args.sns.linkedin;
+    if (args.sns.facebook) sns.facebook = args.sns.facebook;
+    if (Object.keys(sns).length > 0) metadata.sns = sns;
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): AlibabaIngestConversation[] {
@@ -214,6 +272,11 @@ export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): Ali
         direction: (message.sender?.targetId === ownerAliId ? "outbound" : "inbound") as MessageDirection
       }));
 
+    // 등급 뱃지 URL을 enrichment metadata로 보존(있을 때만). 등급 값 해석은 parseAlibabaGrade(아직 undefined).
+    // SNS는 여기서 채우지 않는다 — 디스커버리(웹 검색)는 라이브 브라우저가 있어야 돌고, 그 결과를 끼우는
+    // 통합 지점은 discoverBuyerSns(아래) 주석에 적어 둔다. 그전까진 sns 빈 채로 둔다(가짜 결과 금지).
+    const metadata = buildContactMetadata({ gradeBadgeUrl: conversation.contact.alibabaGradeBadgeUrl });
+
     return {
       threadId,
       contact: {
@@ -227,7 +290,9 @@ export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): Ali
         profileImageUrl:
           conversation.contact.profileImageUrl && !/[-_]\d+[-x]\d+\.(png|webp)/i.test(conversation.contact.profileImageUrl)
             ? conversation.contact.profileImageUrl
-            : undefined
+            : undefined,
+        // enrichment(등급/SNS) — 값 있을 때만 동봉(빈 객체면 undefined라 키 자체가 빠진다).
+        ...(metadata ? { metadata } : {})
       },
       messages
     };

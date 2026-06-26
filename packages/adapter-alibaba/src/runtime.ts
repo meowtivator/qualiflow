@@ -7,4 +7,11 @@ export { loginAlibaba } from "./cli/login-session";
 export { extractAlibaba } from "./cli/extract-session";
 export { sendAlibaba } from "./cli/send-session";
 // 순수 변환(알리바바 raw → ingest DTO). 에이전트 push가 알리바바를 서버로 올릴 때 사용.
-export { alibabaToIngestConversations, type AlibabaIngestConversation } from "./normalize";
+export {
+  alibabaToIngestConversations,
+  parseAlibabaGrade,
+  type AlibabaIngestConversation,
+  type AlibabaContactMetadata
+} from "./normalize";
+// SNS 디스커버리 통합 지점(라이브 브라우저 필요). 에이전트가 바이어별로 호출해 metadata.sns 를 채울 때 사용.
+export { discoverBuyerSns, type DiscoverBuyerSnsInput } from "./headless";

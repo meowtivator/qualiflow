@@ -31,6 +31,11 @@ export type AlibabaRawContact = {
   companyName?: string;
   complianceCountryCode?: string; // 예: "KR"
   profileImageUrl?: string;
+  // ★구매 등급(L1~L4)은 연락처 목록 행에 "뱃지 이미지"(imgextra ...tps-WxH.png)로 뜬다.
+  //   아바타에선 일부러 제외하던 그 URL을, 등급 해석용으로 따로 들고 온다(버리지 않는다).
+  //   추출기(extract-session)가 채우고, normalize가 metadata.alibabaGradeBadgeUrl 로 흘려보낸다.
+  //   ⚠️ 아직 뱃지 URL → L1/L2/L3/L4 매핑이 확정 안 됨(라이브 확인 필요). 값 자체는 절대 지어내지 않는다.
+  alibabaGradeBadgeUrl?: string;
 };
 
 // "고객 활동" 패널(지난 90일)의 지표.

@@ -215,6 +215,10 @@ const EXTRACT_CALL = `(${EXTRACT_IN_PAGE})()`;
 const SCROLL_CALL = `(${SCROLL_UP_IN_PAGE})()`;
 const SCROLL_LIST_DOWN_CALL = `(${SCROLL_LIST_DOWN_IN_PAGE})()`;
 
+// 연락처 행에서 (a)아바타 URL 과 (b)등급 뱃지 URL 을 둘 다 읽어 { avatarUrl, gradeBadgeUrl } 로 반환한다.
+//   - 아바타: imgextra 규격 뱃지(...tps-WxH.png)를 '제외'한 진짜 사진 URL(없으면 undefined → 이니셜 폴백).
+//   - 등급 뱃지: 그 '제외했던' 규격 뱃지 URL 첫 번째(있으면). 여기선 등급으로 해석하지 않고 URL만 들고 나온다.
+//     (해석은 normalize.parseAlibabaGrade 의 몫. 라이브 매핑 확정 전까지 undefined.)
 function buildReadRowProfileImageScript(cid: string | null, index: number) {
   const serialized = JSON.stringify({ cid, index });
 
@@ -258,14 +262,26 @@ function buildReadRowProfileImageScript(cid: string | null, index: number) {
         );
       }
 
+      // 규격 뱃지(예: imgextra ...tps-136-80.png) = 아바타가 아니라 공용 아이콘. 한 번 훑으며
+      // 아바타(첫 번째 비-뱃지 사진)와 등급 뱃지(첫 번째 규격 뱃지)를 따로 모은다.
+      const BADGE_RE = /[-_]\d+[-x]\d+\.(png|webp)/i;
+      let avatarUrl = undefined;
+      let gradeBadgeUrl = undefined;
       for (const candidate of candidates) {
         const url = absolutize(candidate);
-        // ★등급/인증 뱃지(예: imgextra ...tps-136-80.png) 제외 — 아바타가 아니라 공용 아이콘이라 여러 바이어가 같은 이미지를
-        //   쓰게 된다. 아바타 없으면 undefined로 두고 이니셜 폴백. (진짜 아바타는 sc04/kf의 정사각 .jpg)
-        if (url && /^https?:\/\//.test(url) && !/[-_]\d+[-x]\d+\.(png|webp)/i.test(url)) return url;
+        if (!url || !/^https?:\/\//.test(url)) continue;
+        if (BADGE_RE.test(url)) {
+          // ★등급/인증 뱃지 후보 — 버리지 않고 첫 번째를 잡아둔다(등급 해석은 normalize에서).
+          // LIVE-VERIFY: 한 행에 뱃지가 여러 개일 수 있다(등급 뱃지 + 인증 뱃지 등). 라이브에서
+          //   "구매 등급(L1~L4)"을 표현하는 게 정확히 어느 img/URL 인지 확인하고, 필요하면 여기서
+          //   등급 뱃지만 골라내도록 좁혀야 한다(현재는 '첫 규격 뱃지'를 잠정 채택).
+          if (!gradeBadgeUrl) gradeBadgeUrl = url;
+        } else if (!avatarUrl) {
+          avatarUrl = url; // 진짜 아바타(sc04/kf의 정사각 .jpg)
+        }
       }
 
-      return undefined;
+      return { avatarUrl, gradeBadgeUrl };
     })()
   `;
 }
@@ -355,9 +371,12 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     }
     seenCids.add(cid); // 행이 있어 처리 시도 → 마크(빈 대화여도 같은 행 무한 재시도 방지).
 
-    const profileImageUrl = (await page.evaluate(buildReadRowProfileImageScript(cid, 0)).catch(() => undefined)) as
-      | string
+    // 행에서 아바타 + 등급 뱃지 URL을 함께 읽는다(예전엔 아바타만 읽고 뱃지는 버렸다).
+    const rowImages = (await page.evaluate(buildReadRowProfileImageScript(cid, 0)).catch(() => undefined)) as
+      | { avatarUrl?: string; gradeBadgeUrl?: string }
       | undefined;
+    const profileImageUrl = rowImages?.avatarUrl;
+    const gradeBadgeUrl = rowImages?.gradeBadgeUrl;
 
     await rowLoc.click({ timeout: 5000 }).catch(() => undefined);
     const first = await waitForConversation(cid);
@@ -403,7 +422,9 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
         ...first.contact,
         name: first.contact.name || dataName || undefined,
         aliId: first.contact.aliId || dataAliId || undefined,
-        profileImageUrl: first.contact.profileImageUrl || profileImageUrl
+        profileImageUrl: first.contact.profileImageUrl || profileImageUrl,
+        // 등급 뱃지 URL(있으면) 동봉 — 해석은 normalize.parseAlibabaGrade. fiber에 등급이 직접 오면 그걸 우선.
+        alibabaGradeBadgeUrl: first.contact.alibabaGradeBadgeUrl || gradeBadgeUrl
       },
       messages
     });
