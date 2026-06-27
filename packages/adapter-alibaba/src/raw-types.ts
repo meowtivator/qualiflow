@@ -39,6 +39,14 @@ export type AlibabaRawContact = {
   memberId?: string; // 알리바바 내부 식별자.
   // (폴백 보존) 등급 뱃지 URL. 등급 값은 위 userNewLevel을 우선 쓴다.
   alibabaGradeBadgeUrl?: string;
+  // ★디스커버리(웹 검색)로 찾은 후보 SNS URL. 알리바바 화면 fiber엔 없다 — 추출 후 에이전트(라이브
+  //   브라우저가 가능한 Node)가 회사명+국가로 검색해 채운다(옵트인 ALIBABA_SNS=1). 비면 미수집.
+  //   채워지면 alibabaToIngestConversations 가 buildContactMetadata({ sns }) 로 흘려 metadata.sns 가 된다.
+  sns?: {
+    instagram?: string;
+    linkedin?: string;
+    facebook?: string;
+  };
 };
 
 // "고객 활동" 패널(지난 90일)의 지표.

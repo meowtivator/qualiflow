@@ -14,4 +14,7 @@ export {
   type AlibabaContactMetadata
 } from "./normalize";
 // SNS 디스커버리 통합 지점(라이브 브라우저 필요). 에이전트가 바이어별로 호출해 metadata.sns 를 채울 때 사용.
-export { discoverBuyerSns, type DiscoverBuyerSnsInput } from "./headless";
+export { discoverBuyerSns, type DiscoverBuyerSnsInput, type AlibabaHeadlessDiscoveryOptions } from "./headless";
+// 사용자가 이미 깐 크롬 실행파일 경로 탐색(없으면 null). 에이전트가 SNS 디스커버리에 같은 크롬을
+// executablePath 로 넘길 때 쓴다(별도 Playwright 브라우저 다운로드 없이 동작).
+export { findChrome } from "./cli/chrome-cdp";

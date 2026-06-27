@@ -271,12 +271,13 @@ export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): Ali
       }));
 
     // 구매 등급을 행 fiber의 userNewLevel 값에서 직접 채택(형태검증). 뱃지 URL(userNewLevelIcon)·memberId도 보존.
-    // SNS는 여기서 채우지 않는다 — 디스커버리(웹 검색)는 라이브 브라우저가 있어야 돌고, 그 결과를 끼우는
-    // 통합 지점은 discoverBuyerSns(아래) 주석에 적어 둔다. 그전까진 sns 빈 채로 둔다(가짜 결과 금지).
+    // SNS는 알리바바 화면엔 없다 — 라이브 브라우저(에이전트)가 추출 후 discoverBuyerSns 로 채워
+    // contact.sns 에 실어 둔다(옵트인). 여기선 그 값을 그대로 buildContactMetadata 로 흘린다(없으면 빈 채).
     const metadata = buildContactMetadata({
       grade: conversation.contact.userNewLevel,
       gradeBadgeUrl: conversation.contact.userNewLevelIcon ?? conversation.contact.alibabaGradeBadgeUrl,
-      memberId: conversation.contact.memberId
+      memberId: conversation.contact.memberId,
+      sns: conversation.contact.sns
     });
 
     return {

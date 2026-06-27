@@ -7,7 +7,9 @@ import { dirname } from "node:path";
 
 import { createAlibabaAdapterFromConversations, type AlibabaRawConversation } from "@qualiflow/adapter-alibaba";
 import {
+  discoverBuyerSns,
   extractAlibaba,
+  findChrome,
   loginAlibaba as runLoginAlibaba,
   sendAlibaba as runSendAlibaba
 } from "@qualiflow/adapter-alibaba/runtime";
@@ -81,6 +83,68 @@ export function loginAlibaba(profile: string): Promise<void> {
   return runLoginAlibaba(profile);
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// SNS 디스커버리(옵트인) — 추출한 바이어를 회사명+국가로 웹 검색해 후보 instagram/linkedin/facebook
+// URL을 찾아 각 conversation.contact.sns 에 실어 둔다(그 뒤 normalize 가 metadata.sns 로 흘림).
+//
+// ★옵트인: 환경변수 ALIBABA_SNS 가 설정됐을 때만 동작. 기본 fetch는 절대 안 느려진다(검색 안 함).
+// ★best-effort: 한 바이어 검색이 실패해도 전체 fetch를 깨지 않는다(per-buyer try/catch).
+// ★스로틀: 동시에 최대 ALIBABA_SNS_CONCURRENCY(기본 3)개만, 각 검색 사이 ALIBABA_SNS_DELAY_MS(기본
+//   1500ms) 지연 → 검색엔진 차단/과부하 위험을 줄인다. discoverBuyerSns 는 자체적으로 헤드리스
+//   브라우저(playwright-core)를 띄우므로, 사용자가 이미 깐 크롬을 executablePath 로 재사용한다.
+// ────────────────────────────────────────────────────────────────────────
+const SNS_CONCURRENCY = Math.max(1, Number(process.env.ALIBABA_SNS_CONCURRENCY) || 3);
+const SNS_DELAY_MS = Math.max(0, Number(process.env.ALIBABA_SNS_DELAY_MS) || 1500);
+
+async function enrichAlibabaSns(raw: AlibabaRawConversation[]): Promise<number> {
+  // 회사명이 있어야 의미 있는 검색이 된다(이름만으론 동명이인이 많아 노이즈). 회사명 없는 바이어는 건너뜀.
+  const targets = raw.filter((conversation) => Boolean(conversation.contact.companyName));
+  if (targets.length === 0) {
+    console.log("   (SNS) 회사명이 있는 바이어가 없어 검색을 건너뜁니다.");
+    return 0;
+  }
+
+  // 사용자가 이미 깐 크롬을 재사용(없으면 undefined → playwright 기본 채널 시도). 헤드리스로 돈다.
+  const executablePath = (await findChrome()) ?? undefined;
+  console.log(
+    `🔎 (SNS) ${targets.length}명 디스커버리 시작 — 동시 ${SNS_CONCURRENCY}개, 간격 ${SNS_DELAY_MS}ms${
+      executablePath ? " (설치된 크롬 재사용)" : ""
+    }.`
+  );
+
+  let filled = 0;
+  let cursor = 0;
+
+  // 워커 SNS_CONCURRENCY개가 같은 큐(targets)를 나눠 처리한다. 한 바이어 실패는 그 바이어만 건너뛴다.
+  async function worker(): Promise<void> {
+    while (cursor < targets.length) {
+      const conversation = targets[cursor];
+      cursor += 1;
+      const contact = conversation.contact;
+      try {
+        const sns = await discoverBuyerSns(
+          { company: contact.companyName, country: contact.complianceCountryCode, buyerName: contact.name },
+          { headless: true, executablePath }
+        );
+        if (sns) {
+          contact.sns = sns; // ★추출 raw에 직접 실어 둔다 → normalize 가 metadata.sns 로 흘린다.
+          filled += 1;
+        }
+      } catch (error) {
+        // best-effort: 이 바이어만 건너뛴다(전체 fetch는 계속).
+        console.log(`   (SNS) "${contact.name ?? contact.companyName}" 검색 실패 — 건너뜀:`, error instanceof Error ? error.message : error);
+      }
+      if (SNS_DELAY_MS > 0 && cursor < targets.length) {
+        await new Promise((resolve) => setTimeout(resolve, SNS_DELAY_MS));
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(SNS_CONCURRENCY, targets.length) }, () => worker()));
+  console.log(`   (SNS) 완료 — ${filled}/${targets.length}명에서 후보 SNS를 찾았습니다.`);
+  return filled;
+}
+
 export async function fetchAlibaba(label: string, options: { cached: boolean }): Promise<FetchSummary> {
   const profile = sessionPath("alibaba", label);
   const output = dataFile("alibaba", label);
@@ -91,6 +155,15 @@ export async function fetchAlibaba(label: string, options: { cached: boolean }):
   } else {
     console.log(`🔌 알리바바(${label}) 커넥터 실행 — 전용 크롬으로 인박스를 읽습니다...`);
     raw = await extractAlibaba(profile); // 함수 직접 호출 → 대화 반환
+    // ★옵트인(ALIBABA_SNS): 추출 직후 SNS 디스커버리로 contact.sns 를 채운다(실패해도 fetch는 계속).
+    //   --cached 경로는 RE를 안 띄우는 오프라인 재요약이라 SNS도 건너뛴다(라이브 검색 없음).
+    if (process.env.ALIBABA_SNS) {
+      try {
+        await enrichAlibabaSns(raw);
+      } catch (error) {
+        console.log("   (SNS) 디스커버리 단계 실패 — SNS 없이 진행:", error instanceof Error ? error.message : error);
+      }
+    }
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, `${JSON.stringify(raw, null, 2)}\n`, "utf8");
   }
