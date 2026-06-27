@@ -146,7 +146,11 @@ const EXTRACT_IN_PAGE = String.raw`
         contact.avatar ||
         contact.headImageUrl ||
         contact.headUrl ||
-        contact.logoUrl
+        contact.logoUrl,
+      // 등급 폴백(메시지 fiber의 contact에 있을 때만 — 주 출처는 행 fiber).
+      userNewLevel: contact.userNewLevel,
+      userNewLevelIcon: contact.userNewLevelIcon,
+      memberId: contact.memberId
     },
     messages
   };
@@ -281,10 +285,10 @@ const PROBE_IN_PAGE = String.raw`
 `;
 const PROBE_CALL = `(${PROBE_IN_PAGE})()`;
 
-// 연락처 행에서 (a)아바타 URL 과 (b)등급 뱃지 URL 을 둘 다 읽어 { avatarUrl, gradeBadgeUrl } 로 반환한다.
+// 연락처 행에서 (a)아바타 URL, (b)등급 뱃지 URL, (c)행 fiber의 구매 등급(userNewLevel/Icon/memberId)을
+//   읽어 { avatarUrl, gradeBadgeUrl, userNewLevel, userNewLevelIcon, memberId } 로 반환한다.
 //   - 아바타: imgextra 규격 뱃지(...tps-WxH.png)를 '제외'한 진짜 사진 URL(없으면 undefined → 이니셜 폴백).
-//   - 등급 뱃지: 그 '제외했던' 규격 뱃지 URL 첫 번째(있으면). 여기선 등급으로 해석하지 않고 URL만 들고 나온다.
-//     (해석은 normalize.parseAlibabaGrade 의 몫. 라이브 매핑 확정 전까지 undefined.)
+//   - 등급: 행 React fiber의 userNewLevel 값을 직접 읽는다(프로브 확정). 형태검증은 normalize.normalizeAlibabaGrade.
 function buildReadRowProfileImageScript(cid: string | null, index: number) {
   const serialized = JSON.stringify({ cid, index });
 
@@ -347,7 +351,37 @@ function buildReadRowProfileImageScript(cid: string | null, index: number) {
         }
       }
 
-      return { avatarUrl, gradeBadgeUrl };
+      // 행의 React fiber에서 구매 등급을 '값으로' 직접 읽는다(뱃지 URL 추측보다 정확).
+      // 프로브 확정: memoizedProps.item.contact.userNewLevel(백업 item.userNewLevel),
+      //   userNewLevelIcon=등급 뱃지, item.memberId=내부 식별자. (PROBE_IN_PAGE와 같은 fiber 훑기.)
+      let userNewLevel = undefined;
+      let userNewLevelIcon = undefined;
+      let memberId = undefined;
+      const fk = Object.keys(row).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+      if (fk) {
+        let fiber = row[fk];
+        let hops = 0;
+        while (fiber && hops < 12 && userNewLevel === undefined) {
+          const p = fiber.memoizedProps;
+          if (p && typeof p === "object") {
+            for (const base of [p.item, p.data, p.contact, p]) {
+              if (!base || typeof base !== "object") continue;
+              const c = base.contact && typeof base.contact === "object" ? base.contact : base;
+              if (c.userNewLevel != null && userNewLevel === undefined) {
+                userNewLevel = String(c.userNewLevel);
+                if (c.userNewLevelIcon) userNewLevelIcon = String(c.userNewLevelIcon);
+              }
+              if ((base.memberId != null || c.memberId != null) && memberId === undefined) {
+                memberId = String(base.memberId != null ? base.memberId : c.memberId);
+              }
+            }
+          }
+          fiber = fiber.return;
+          hops += 1;
+        }
+      }
+
+      return { avatarUrl, gradeBadgeUrl, userNewLevel, userNewLevelIcon, memberId };
     })()
   `;
 }
@@ -459,10 +493,13 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
 
     // 행에서 아바타 + 등급 뱃지 URL을 함께 읽는다(예전엔 아바타만 읽고 뱃지는 버렸다).
     const rowImages = (await page.evaluate(buildReadRowProfileImageScript(cid, 0)).catch(() => undefined)) as
-      | { avatarUrl?: string; gradeBadgeUrl?: string }
+      | { avatarUrl?: string; gradeBadgeUrl?: string; userNewLevel?: string; userNewLevelIcon?: string; memberId?: string }
       | undefined;
     const profileImageUrl = rowImages?.avatarUrl;
     const gradeBadgeUrl = rowImages?.gradeBadgeUrl;
+    const userNewLevel = rowImages?.userNewLevel;
+    const userNewLevelIcon = rowImages?.userNewLevelIcon;
+    const memberId = rowImages?.memberId;
 
     await rowLoc.click({ timeout: 5000 }).catch(() => undefined);
     const first = await waitForConversation(cid);
@@ -509,8 +546,12 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
         name: first.contact.name || dataName || undefined,
         aliId: first.contact.aliId || dataAliId || undefined,
         profileImageUrl: first.contact.profileImageUrl || profileImageUrl,
-        // 등급 뱃지 URL(있으면) 동봉 — 해석은 normalize.parseAlibabaGrade. fiber에 등급이 직접 오면 그걸 우선.
-        alibabaGradeBadgeUrl: first.contact.alibabaGradeBadgeUrl || gradeBadgeUrl
+        // 구매 등급을 행 fiber에서 직접 읽은 값으로 동봉(행 fiber 우선, 메시지 fiber 폴백). 해석은 normalize.normalizeAlibabaGrade.
+        userNewLevel: userNewLevel || first.contact.userNewLevel,
+        userNewLevelIcon: userNewLevelIcon || first.contact.userNewLevelIcon,
+        memberId: memberId || first.contact.memberId,
+        // 등급 뱃지 URL(폴백 보존). 등급 값은 userNewLevel 우선.
+        alibabaGradeBadgeUrl: userNewLevelIcon || first.contact.alibabaGradeBadgeUrl || gradeBadgeUrl
       },
       messages
     });

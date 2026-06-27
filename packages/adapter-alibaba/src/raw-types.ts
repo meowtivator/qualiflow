@@ -31,10 +31,13 @@ export type AlibabaRawContact = {
   companyName?: string;
   complianceCountryCode?: string; // 예: "KR"
   profileImageUrl?: string;
-  // ★구매 등급(L1~L4)은 연락처 목록 행에 "뱃지 이미지"(imgextra ...tps-WxH.png)로 뜬다.
-  //   아바타에선 일부러 제외하던 그 URL을, 등급 해석용으로 따로 들고 온다(버리지 않는다).
-  //   추출기(extract-session)가 채우고, normalize가 metadata.alibabaGradeBadgeUrl 로 흘려보낸다.
-  //   ⚠️ 아직 뱃지 URL → L1/L2/L3/L4 매핑이 확정 안 됨(라이브 확인 필요). 값 자체는 절대 지어내지 않는다.
+  // ★구매 등급(L1~L4)은 연락처 목록 행의 React fiber에 '값으로' 직접 들어있다(프로브로 확정):
+  //   memoizedProps.item.contact.userNewLevel = "L2" 같은 값, userNewLevelIcon = 등급 뱃지 이미지,
+  //   memberId = 알리바바 내부 식별자. 추출기(extract-session)가 행 fiber에서 직접 읽어 채운다.
+  userNewLevel?: string; // 구매 등급 값(예: "L1"~"L4"). 없으면 등급 미부여.
+  userNewLevelIcon?: string; // 등급 뱃지 이미지 URL(있을 때).
+  memberId?: string; // 알리바바 내부 식별자.
+  // (폴백 보존) 등급 뱃지 URL. 등급 값은 위 userNewLevel을 우선 쓴다.
   alibabaGradeBadgeUrl?: string;
 };
 
