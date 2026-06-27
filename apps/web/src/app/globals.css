@@ -679,12 +679,136 @@ a {
 .messenger-layout {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
+  grid-template-columns: 196px minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
   gap: 12px;
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 16px 20px 20px;
+}
+
+/* 사이드바가 접히면 첫 칸을 아이콘 폭으로 줄인다. */
+.messenger-layout.nav-collapsed {
+  grid-template-columns: 52px minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
+}
+
+/* 필터 결과가 빈 화면: [사이드바 | 안내] 2칸. */
+.messenger-layout.filter-empty {
+  grid-template-columns: 196px minmax(0, 1fr);
+}
+
+.messenger-layout.filter-empty.nav-collapsed {
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+
+/* 인박스 내부 사이드바(맨 왼쪽 폴더/필터). */
+.inbox-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+}
+
+.inbox-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--hairline);
+  padding: 14px;
+}
+
+.inbox-sidebar.collapsed .inbox-sidebar-head {
+  justify-content: center;
+  padding: 14px 8px;
+}
+
+.inbox-sidebar-title {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inbox-collapse {
+  flex: 0 0 auto;
+}
+
+.inbox-folders {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.inbox-sidebar.collapsed .inbox-folders {
+  justify-items: center;
+  padding: 8px 6px;
+}
+
+.inbox-folder {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-left: 2px solid transparent;
+  color: var(--ink-muted);
+  padding: 8px 10px;
+}
+
+.inbox-sidebar.collapsed .inbox-folder {
+  grid-template-columns: auto;
+  justify-items: center;
+  padding: 8px;
+}
+
+.inbox-folder:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.inbox-folder.active {
+  border-left-color: var(--primary);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.inbox-folder-icon {
+  display: grid;
+  place-items: center;
+  color: inherit;
+}
+
+.inbox-folder-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.inbox-folder-count {
+  color: var(--ink-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inbox-folder.active .inbox-folder-count {
+  color: var(--ink-muted);
+}
+
+.messenger-empty.inline {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  text-align: center;
+  padding: 24px;
 }
 
 .thread-panel,
@@ -1329,10 +1453,22 @@ a {
   }
 
   .messenger-layout {
-    grid-template-columns: minmax(260px, 34vw) minmax(330px, 1fr) minmax(260px, 32vw);
+    grid-template-columns: 176px minmax(260px, 34vw) minmax(330px, 1fr) minmax(260px, 32vw);
     overflow-x: auto;
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .messenger-layout.nav-collapsed {
+    grid-template-columns: 52px minmax(260px, 34vw) minmax(330px, 1fr) minmax(260px, 32vw);
+  }
+
+  .messenger-layout.filter-empty {
+    grid-template-columns: 176px minmax(0, 1fr);
+  }
+
+  .messenger-layout.filter-empty.nav-collapsed {
+    grid-template-columns: 52px minmax(0, 1fr);
   }
 
   .message-timeline {
