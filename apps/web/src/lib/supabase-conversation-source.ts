@@ -10,6 +10,7 @@ import {
   type LeadStage,
   type LeadSubStage,
   type Message,
+  type MessageAttachment,
   type MessageDirection,
   type MessageStatus,
   type MessageVisibility,
@@ -69,9 +70,35 @@ type MessageRow = {
   // (구버전 데이터엔 비어있을 수 있어 둘 다 optional — 비면 방향 기반 기본값으로 폴백)
   author: { displayName?: string; role?: string } | null;
   content: { text?: string } | null;
+  // DB messages.attachments jsonb 배열은 core의 MessageAttachment[] 모양으로 저장된다(0012 ingest).
+  // 텍스트-only/구버전 메시지는 빈 배열 또는 null일 수 있어, mapMessage가 배열일 때만 흘린다.
+  attachments: unknown;
   sent_at: string;
   received_at: string | null;
 };
+
+// DB attachments(jsonb)를 core MessageAttachment[]로 안전 매핑. 모양이 깨졌으면(객체 누락/타입 불일치)
+// 그 항목만 건너뛴다 — 한 첨부가 망가져도 메시지 자체는 렌더된다(텍스트는 항상 보존). 빈 결과면 undefined.
+//   ★여기선 url을 강제하지 않는다(계약상 옵셔널). source가 pending/skipped/error면 url이 없을 수 있고,
+//     렌더(message-bubble)가 그 상태를 자리표시로 처리한다. 즉 reader는 '있는 그대로' 통과만 시킨다.
+function mapAttachments(value: unknown): MessageAttachment[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const items: MessageAttachment[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const att = entry as Partial<MessageAttachment>;
+    // 최소 식별 필드(id, kind, fileName, mimeType, source)가 있어야 렌더 분기가 가능하다.
+    if (typeof att.id !== "string" || typeof att.kind !== "string" || typeof att.source !== "string") {
+      continue;
+    }
+    items.push(att as MessageAttachment);
+  }
+  return items.length > 0 ? items : undefined;
+}
 
 function mapLead(row: LeadRow): Lead {
   return {
@@ -135,6 +162,8 @@ function mapMessage(row: MessageRow): Message {
       role
     },
     content: { type: "text", text },
+    // 미디어 첨부(사진·영상 등). 배열이 아니거나 비면 키를 생략한다(텍스트-only 메시지와 동일한 모양 유지).
+    attachments: mapAttachments(row.attachments),
     sentAt: row.sent_at,
     receivedAt: row.received_at ?? undefined
   };

@@ -1178,6 +1178,47 @@ a {
   line-height: 1.55;
 }
 
+/* 미디어 첨부(사진·영상·파일). 텍스트 아래에 세로로 쌓는다. */
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.message-attachment.image {
+  display: block;
+  max-width: 280px;
+}
+
+.message-attachment.image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline);
+}
+
+.message-attachment.video {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  border: 1px solid var(--hairline);
+}
+
+.message-attachment.file {
+  display: inline-block;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+/* url이 없는 첨부(불러오는 중/제한/실패)의 자리표시 — 흐리게. */
+.message-attachment.placeholder {
+  display: inline-block;
+  font-size: 13px;
+  opacity: 0.72;
+  font-style: italic;
+}
+
 .reply-draft {
   display: grid;
   gap: 10px;
