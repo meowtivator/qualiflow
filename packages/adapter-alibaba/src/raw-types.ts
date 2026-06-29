@@ -51,7 +51,8 @@ export type AlibabaRawContact = {
   //   (customerBehaviorData)이 JSONP(queryCustomerInfo)로 받아오므로(아래 두 타입 주석 참고),
   //   추출기가 그 응답을 캡처해 '연락처(바이어) 단위'로 여기에 실어 둔다(값 있을 때만).
   //   alibabaToIngestConversations 가 이 값을 buildContactMetadata({ orderCounts, activity })로
-  //   흘려 lead_metadata 로 보낸다. ★라이브 JSONP 응답 키 미확정 → 캡처/덤프까지만, 매핑은 보류.
+  //   흘려 lead_metadata 로 보낸다. ★activity 라이브 키 확정·배선됨(extract-session.buyerInfoToActivity,
+  //   probe 2026-06). orderCounts(카드수)는 이 엔드포인트에 없음 — 메시지 패널 chatData 가 출처(별개).
   orderCounts?: AlibabaBuyerOrderCounts;
   activity?: AlibabaBuyerActivity;
 };

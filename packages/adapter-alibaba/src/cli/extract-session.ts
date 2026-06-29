@@ -15,7 +15,7 @@ import { dirname, resolve } from "node:path";
 
 import { chromium, type BrowserContext, type Page, type Response } from "playwright-core";
 
-import type { AlibabaRawConversation } from "../raw-types";
+import type { AlibabaBuyerActivity, AlibabaRawConversation } from "../raw-types";
 import { dataFile, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 // ────────────────────────────────────────────────────────────────────────
@@ -76,6 +76,37 @@ function captureCustomerInfoResponses(page: Page, maxBodyChars = 20_000): Captur
       .catch(() => undefined);
   });
   return captured;
+}
+
+// queryCustomerInfo JSONP 한 건에서 buyerInfo와 등급(growthLevel/highQualityLevelTag)을 꺼낸다(없으면 undefined).
+function readBuyerInfo(
+  entry: CapturedJsonpResponse
+): { buyerInfo: Record<string, unknown>; grade?: string } | undefined {
+  const root = entry.parsed as { data?: { data?: { buyerInfo?: Record<string, unknown> } } } | undefined;
+  const buyerInfo = root?.data?.data?.buyerInfo;
+  if (!buyerInfo || typeof buyerInfo !== "object") return undefined;
+  const growth = (buyerInfo.growthLevelInfo as { growthLevel?: unknown } | undefined)?.growthLevel;
+  const hq = buyerInfo.highQualityLevelTag;
+  const grade = typeof growth === "string" ? growth : typeof hq === "string" ? hq : undefined;
+  return { buyerInfo, grade };
+}
+
+// buyerInfo → AlibabaBuyerActivity. ★음수(-1=숨김)·null·비수치는 버린다(키를 지어내지 않는다).
+//   라이브 키 확정(probe 2026-06, alibaba-customer-info-probe.json): productViewCount/validInquiryCount/
+//   validRfqCount/loginDays/spamInquiryMarkedBySupplierCount/addedToBlacklistCount/totalOrderCount.
+function buyerInfoToActivity(buyerInfo: Record<string, unknown>): AlibabaBuyerActivity {
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+  const loginRaw = buyerInfo.loginDays;
+  return {
+    productViews: num(buyerInfo.productViewCount),
+    validInquiries: num(buyerInfo.validInquiryCount),
+    validRfqs: num(buyerInfo.validRfqCount),
+    loginDays: loginRaw == null ? null : num(loginRaw),
+    spamInquiries: num(buyerInfo.spamInquiryMarkedBySupplierCount),
+    blacklistCount: num(buyerInfo.addedToBlacklistCount),
+    totalTrades: num(buyerInfo.totalOrderCount)
+  };
 }
 // ────────────────────────────────────────────────────────────────────────
 
@@ -567,6 +598,8 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     const userNewLevelIcon = rowImages?.userNewLevelIcon;
     const memberId = rowImages?.memberId;
 
+    // 이 대화를 여는 동안 도착할 고객정보(queryCustomerInfo) 응답만 보려고 현재 캡처 길이를 스냅샷.
+    const ciStart = capturedCustomerInfo.length;
     await rowLoc.click({ timeout: 5000 }).catch(() => undefined);
     const first = await waitForConversation(cid);
     if (!first || !first.messages.length) {
@@ -605,6 +638,23 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     }
 
     const messages = [...byId.values()].sort((a, b) => (a.sendTime ?? 0) - (b.sendTime ?? 0));
+
+    // 고객 활동(#7): 이 대화를 여는 동안 캡처된 queryCustomerInfo 응답에서 활동 지표를 뽑는다.
+    //   연결 키가 없어(URL buyerAccountId ↔ 우리 memberId 형식 불일치) '열린 순서 윈도우'로 잡되,
+    //   등급(growthLevel)이 행 fiber userNewLevel과 일치할 때만 채택해 오귀속을 막는다(모호하면 생략 = 빈 채로 둠).
+    let activity: AlibabaBuyerActivity | undefined;
+    const freshCi = capturedCustomerInfo
+      .slice(ciStart)
+      .map(readBuyerInfo)
+      .filter((x): x is { buyerInfo: Record<string, unknown>; grade?: string } => Boolean(x));
+    if (freshCi.length) {
+      const want = (userNewLevel || first.contact.userNewLevel || "").trim().toUpperCase();
+      const gradeMatch = want ? freshCi.find((f) => (f.grade ?? "").trim().toUpperCase() === want) : undefined;
+      // 등급 일치 우선 → 없으면 이 창에서 캡처가 '딱 하나'일 때만(모호하지 않을 때) 채택.
+      const chosen = gradeMatch ?? (freshCi.length === 1 ? freshCi[0] : undefined);
+      if (chosen) activity = buyerInfoToActivity(chosen.buyerInfo);
+    }
+
     conversations.push({
       owner: first.owner,
       contact: {
@@ -617,7 +667,9 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
         userNewLevelIcon: userNewLevelIcon || first.contact.userNewLevelIcon,
         memberId: memberId || first.contact.memberId,
         // 등급 뱃지 URL(폴백 보존). 등급 값은 userNewLevel 우선.
-        alibabaGradeBadgeUrl: userNewLevelIcon || first.contact.alibabaGradeBadgeUrl || gradeBadgeUrl
+        alibabaGradeBadgeUrl: userNewLevelIcon || first.contact.alibabaGradeBadgeUrl || gradeBadgeUrl,
+        // 고객 활동(queryCustomerInfo) — 위에서 등급 일치로 검증해 채택(없으면 기존값/빈 채).
+        activity: activity ?? first.contact.activity
       },
       messages
     });
@@ -661,8 +713,8 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
   }
 
   // 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 덤프(ALIBABA_PROBE 일 때만): 대화들을 다 열어 본 뒤
-  //   (그동안 queryCustomerInfo 응답이 쌓였다) 캡처한 원문을 파일로 떨군다. ★매핑은 아직 안 한다 —
-  //   사람이 이 덤프에서 어느 키가 주문 카운트/활동인지 확인해 '라이브 JSONP 키'를 확정해야 다음 단계로 간다.
+  //   (그동안 queryCustomerInfo 응답이 쌓였다) 캡처한 원문을 파일로 떨군다. ★고객 활동(#7) 키는
+  //   확정·배선됨(buyerInfoToActivity). 이 덤프는 남은 키(주문 카드수 등) 진단용으로만 유지한다.
   if (process.env.ALIBABA_PROBE) {
     try {
       const dumpPath = dataFile("alibaba-customer-info-probe.json");
@@ -671,7 +723,7 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
         dumpPath,
         JSON.stringify(
           {
-            note: "주문 카운트(#5)·고객 활동(#7) JSONP(queryCustomerInfo) 원문 캡처. 라이브 키 미확정 — 어느 필드가 주문 카운트/활동인지 사람이 지목해야 매핑을 붙인다. (이 단계는 캡처+덤프만.)",
+            note: "queryCustomerInfo JSONP 원문 캡처. 고객 활동(#7)은 buyerInfo→AlibabaBuyerActivity 로 확정·배선됨(extract-session.buyerInfoToActivity). 이 덤프는 남은 키(주문 카드수 등) 진단용.",
             urlMatch: CUSTOMER_INFO_URL_RE.source,
             capturedCount: capturedCustomerInfo.length,
             responses: capturedCustomerInfo
