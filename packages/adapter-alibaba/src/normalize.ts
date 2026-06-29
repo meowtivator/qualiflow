@@ -1,6 +1,11 @@
 import type { Lead, Message, MessageAttachment, MessageDirection, Thread } from "@qualiflow/core";
 
-import type { AlibabaRawConversation, AlibabaRawMessage } from "./raw-types.js";
+import type {
+  AlibabaBuyerActivity,
+  AlibabaBuyerOrderCounts,
+  AlibabaRawConversation,
+  AlibabaRawMessage
+} from "./raw-types.js";
 
 // ────────────────────────────────────────────────────────────────────────
 // 비즈니스 판단(우리가 임의로 정한 규칙). 코드 곳곳에 숨기지 않고 여기 모아둔다.
@@ -184,6 +189,12 @@ export type AlibabaContactMetadata = {
     linkedin?: string;
     facebook?: string;
   };
+  // 주문 카운트(#5). 메시지 패널 상단 카드/주문 카운트 — 별도 JSONP(queryCustomerInfo)로 캡처해 흘린다.
+  // ★값이 있을 때만(추출기가 라이브 응답을 캡처했을 때만). 라이브 JSONP 키 미확정 → 형태는 잠정.
+  orderCounts?: AlibabaBuyerOrderCounts;
+  // 고객 활동(#7, 지난 90일). "고객 활동" 패널 지표 — 위와 같은 JSONP 출처.
+  // ★값이 있을 때만. 라이브 JSONP 키 미확정 → 형태는 잠정.
+  activity?: AlibabaBuyerActivity;
 };
 
 export type AlibabaIngestConversation = {
@@ -232,6 +243,8 @@ function buildContactMetadata(args: {
   gradeBadgeUrl?: string;
   memberId?: string;
   sns?: AlibabaContactMetadata["sns"];
+  orderCounts?: AlibabaBuyerOrderCounts;
+  activity?: AlibabaBuyerActivity;
 }): AlibabaContactMetadata | undefined {
   const metadata: AlibabaContactMetadata = {};
 
@@ -249,7 +262,29 @@ function buildContactMetadata(args: {
     if (Object.keys(sns).length > 0) metadata.sns = sns;
   }
 
+  // 주문 카운트(#5)·고객 활동(#7)은 추출기가 JSONP(queryCustomerInfo) 응답을 캡처했을 때만 들어온다.
+  // ★값이 '있는 칸만' 골라 담는다(undefined 칸은 생략) — 그래야 서버 jsonb merge가 빈 값으로 덮지 않는다.
+  //   라이브 JSONP 응답 키 미확정이라, 추출기가 잠정 형태로 채워 줄 때만 그대로 통과시킨다(여기선 매핑 안 함).
+  const orderCounts = pickDefined(args.orderCounts);
+  if (orderCounts) metadata.orderCounts = orderCounts as AlibabaBuyerOrderCounts;
+  const activity = pickDefined(args.activity);
+  if (activity) metadata.activity = activity as AlibabaBuyerActivity;
+
   return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+// 객체에서 '값이 정의된 칸만' 추린다(null/undefined 제거). 남는 칸이 없으면 undefined.
+//   → 빈 객체나 전부-빈 객체를 ingest로 흘리지 않게 한다(jsonb merge가 기존 값을 빈 값으로 덮는 사고 방지).
+// ★업무 규칙(명시): null도 제거한다. 예) activity.loginDays 는 화면상 "--"면 null로 오는데, null을
+//   그대로 보내면 서버 jsonb merge에서 기존 값을 null로 덮을 수 있다 → "모름"은 키를 빼서 표현한다.
+function pickDefined<T extends Record<string, unknown>>(obj: T | undefined): Partial<T> | undefined {
+  if (!obj || typeof obj !== "object") return undefined;
+  const out: Partial<T> = {};
+  for (const key of Object.keys(obj) as Array<keyof T>) {
+    const value = obj[key];
+    if (value !== null && value !== undefined) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): AlibabaIngestConversation[] {
@@ -273,11 +308,18 @@ export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): Ali
     // 구매 등급을 행 fiber의 userNewLevel 값에서 직접 채택(형태검증). 뱃지 URL(userNewLevelIcon)·memberId도 보존.
     // SNS는 알리바바 화면엔 없다 — 라이브 브라우저(에이전트)가 추출 후 discoverBuyerSns 로 채워
     // contact.sns 에 실어 둔다(옵트인). 여기선 그 값을 그대로 buildContactMetadata 로 흘린다(없으면 빈 채).
+    // 주문 카운트(#5)·고객 활동(#7)은 추출기가 JSONP 응답을 캡처해 '연락처(contact)' 단위로 실어 둔다.
+    //   폴백: 예전 캡처가 대화(conversation) 단위로 실었으면 그것도 받는다(둘 다 없으면 undefined → 키 생략).
+    const orderCounts = conversation.contact.orderCounts ?? conversation.orderCounts;
+    const activity = conversation.contact.activity ?? conversation.activity;
+
     const metadata = buildContactMetadata({
       grade: conversation.contact.userNewLevel,
       gradeBadgeUrl: conversation.contact.userNewLevelIcon ?? conversation.contact.alibabaGradeBadgeUrl,
       memberId: conversation.contact.memberId,
-      sns: conversation.contact.sns
+      sns: conversation.contact.sns,
+      orderCounts,
+      activity
     });
 
     return {

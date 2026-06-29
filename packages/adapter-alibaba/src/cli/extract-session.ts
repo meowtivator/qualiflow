@@ -13,10 +13,71 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { chromium, type BrowserContext, type Page } from "playwright-core";
+import { chromium, type BrowserContext, type Page, type Response } from "playwright-core";
 
 import type { AlibabaRawConversation } from "../raw-types";
 import { dataFile, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
+
+// ────────────────────────────────────────────────────────────────────────
+// 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 캡처(진단/배선 준비 — 매핑은 보류).
+//
+// 왜 따로 잡나: "고객 활동"·주문 카운트는 메시지 fiber(itemData)가 아니라 별도 원격 모듈
+//   (customerBehaviorData)이 JSONP(queryCustomerInfo)로 받아온다. 그래서 메시지 추출(EXTRACT_IN_PAGE)
+//   과는 다른 경로 — 네트워크 응답을 가로채야 한다. (record-inquiry.ts 의 page.on("response") 패턴 미러링.)
+//
+// ★라이브 JSONP 응답의 정확한 '키 이름'과 '엔드포인트 URL'이 아직 미확정이다. 그래서 여기서는
+//   추측해서 키를 매핑하지 않는다 — URL이 customerInfo/behavior 류로 보이는 응답의 '원문(raw)'을
+//   그대로 캡처해 파일로 덤프만 한다. 사람이 그 덤프를 보고 어느 키가 주문 카운트/활동인지 지목하면,
+//   그때 normalize 의 AlibabaBuyerOrderCounts/AlibabaBuyerActivity 로 매핑하는 코드를 붙인다.
+//   (지금 단계: 캡처+덤프 = '라이브 키 확정'을 위한 1회성 진단. ALIBABA_PROBE 일 때만 동작.)
+//
+// URL 매칭은 '넓게' 잡는다(엔드포인트명도 미확정이라): queryCustomerInfo 가 주 후보지만,
+//   customerBehavior/customerInfo/behaviorData 류도 함께 잡아 덤프해 비교한다.
+const CUSTOMER_INFO_URL_RE = /queryCustomerInfo|customerBehavior|customerInfo|behaviorData/i;
+
+type CapturedJsonpResponse = {
+  url: string;
+  status: number;
+  contentType: string;
+  // JSONP는 보통 `callbackName({...})` 꼴이라 순수 JSON이 아니다. 파싱은 시도만 하고,
+  //   실패해도 원문(rawBody)을 그대로 남긴다(사람이 키를 찾을 수 있게). 절대 키를 지어내지 않는다.
+  parsed?: unknown;
+  rawBody: string;
+};
+
+// page.on("response") 로 customerInfo/behavior 류 응답을 모은다. 반환된 배열은 페이지 수명 동안 채워진다.
+//   ★읽기 전용: 응답 본문만 읽고(가능할 때) 아무것도 바꾸지 않는다. 본문 길이는 상한으로 자른다(폭주 방지).
+function captureCustomerInfoResponses(page: Page, maxBodyChars = 20_000): CapturedJsonpResponse[] {
+  const captured: CapturedJsonpResponse[] = [];
+  page.on("response", (response: Response) => {
+    const url = response.url();
+    if (!CUSTOMER_INFO_URL_RE.test(url)) return;
+    // 본문 읽기는 비동기 — 실패(이미 소비/리다이렉트 등)해도 조용히 건너뛴다.
+    void response
+      .text()
+      .then((rawText) => {
+        const body = rawText.slice(0, maxBodyChars);
+        const entry: CapturedJsonpResponse = {
+          url,
+          status: response.status(),
+          contentType: response.headers()["content-type"] ?? "",
+          rawBody: body
+        };
+        // JSONP 껍데기(callback(...))를 벗겨 안쪽 JSON만 파싱 시도. 실패하면 parsed는 비워 둔다.
+        const inner = body.match(/^[^({]*\(([\s\S]*)\)\s*;?\s*$/);
+        const jsonText = inner ? inner[1] : body;
+        try {
+          entry.parsed = JSON.parse(jsonText);
+        } catch {
+          // 순수 JSON도 JSONP도 아님 → parsed 생략, rawBody만 남긴다(사람이 직접 키 확인).
+        }
+        captured.push(entry);
+      })
+      .catch(() => undefined);
+  });
+  return captured;
+}
+// ────────────────────────────────────────────────────────────────────────
 
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
@@ -407,6 +468,11 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
   const context = browser.contexts()[0];
   const page = context.pages()[0] ?? (await context.newPage());
 
+  // 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 캡처는 goto '전에' 리스너를 건다(인박스 로드·대화 열 때
+  //   터지는 queryCustomerInfo 응답을 놓치지 않게). ALIBABA_PROBE 일 때만 끝에서 파일로 덤프한다.
+  //   ★캡처는 항상 켜 두되(부작용 없음 — 읽기만), 덤프/매핑은 안 한다. 라이브 키 확정용 진단.
+  const capturedCustomerInfo = captureCustomerInfoResponses(page);
+
   // ★goto 전에 login이 백업한 세션 쿠키를 주입한다(프로필만으론 세션 쿠키가 사라져 로그인 페이지로 튐).
   const injected = await injectSessionCookies(context, cookiesFile);
   if (injected) {
@@ -592,6 +658,38 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     emptyStreak = openedThisRound === 0 ? emptyStreak + 1 : 0;
     // 목록이 맨 아래(또는 스크롤 불가) + 2라운드 연속 새 대화 없음 → 끝.
     if ((!listScroll || !listScroll.found || listScroll.atBottom) && emptyStreak >= 2) break;
+  }
+
+  // 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 덤프(ALIBABA_PROBE 일 때만): 대화들을 다 열어 본 뒤
+  //   (그동안 queryCustomerInfo 응답이 쌓였다) 캡처한 원문을 파일로 떨군다. ★매핑은 아직 안 한다 —
+  //   사람이 이 덤프에서 어느 키가 주문 카운트/활동인지 확인해 '라이브 JSONP 키'를 확정해야 다음 단계로 간다.
+  if (process.env.ALIBABA_PROBE) {
+    try {
+      const dumpPath = dataFile("alibaba-customer-info-probe.json");
+      await mkdir(dirname(dumpPath), { recursive: true });
+      await writeFile(
+        dumpPath,
+        JSON.stringify(
+          {
+            note: "주문 카운트(#5)·고객 활동(#7) JSONP(queryCustomerInfo) 원문 캡처. 라이브 키 미확정 — 어느 필드가 주문 카운트/활동인지 사람이 지목해야 매핑을 붙인다. (이 단계는 캡처+덤프만.)",
+            urlMatch: CUSTOMER_INFO_URL_RE.source,
+            capturedCount: capturedCustomerInfo.length,
+            responses: capturedCustomerInfo
+          },
+          null,
+          2
+        ),
+        "utf8"
+      );
+      console.log(`🔎 고객정보/활동 JSONP 캡처 저장됨(${capturedCustomerInfo.length}건): ${dumpPath}`);
+      if (capturedCustomerInfo.length === 0) {
+        console.log(
+          "   ⚠️ 0건 캡처 — URL 매칭(queryCustomerInfo 류)이 안 맞거나, '고객 활동' 패널을 열어야 응답이 터질 수 있어요. 라이브에서 엔드포인트명을 확인하세요."
+        );
+      }
+    } catch (error) {
+      console.log("고객정보/활동 JSONP 덤프 실패(무시하고 진행):", error);
+    }
   }
 
   await browser.close();
