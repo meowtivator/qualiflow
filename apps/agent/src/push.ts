@@ -5,25 +5,20 @@
 
 import { readFile } from "node:fs/promises";
 
-import type { MessageAttachment } from "@qualiflow/core";
+import { INGEST_CONTRACT_VERSION } from "@qualiflow/core";
+import type { IngestConversation, IngestResponse, MessageAttachment } from "@qualiflow/core";
 import { alibabaToIngestConversations } from "@qualiflow/adapter-alibaba/runtime";
 
 import { dataFile, listAccounts } from "./accounts";
 import { authedFetch } from "./api-client";
 import { uploadPendingAttachments } from "./media";
 
-type NormalizedConversation = {
-  threadId?: string;
-  contact?: { id?: string; name?: string; handle?: string };
-  // attachments는 그대로 서버로 흘려보낸다(여기선 모양 검증만, 미디어 구조는 core MessageAttachment).
-  messages?: Array<{ id?: string; text?: string; sentAt?: string; direction?: string; attachments?: unknown[] }>;
-};
-
-function isNormalized(value: unknown): value is NormalizedConversation[] {
+// 공통 ingest 형태(@qualiflow/core IngestConversation)인지 '모양으로' 판별한다 — 채널 하드코딩 없음.
+function isNormalized(value: unknown): value is IngestConversation[] {
   if (!Array.isArray(value) || value.length === 0) {
     return false;
   }
-  const first = value[0] as NormalizedConversation | null;
+  const first = value[0] as IngestConversation | null;
   const firstMessage = first?.messages?.[0];
   // 공통 스키마는 contact.id(문자열) + messages[].id 를 가진다. 알리바바 원시형태는 contact.aliId/messageId라
   // 여기서 걸러져 skip된다(채널 하드코딩 없이 모양으로 판별).
@@ -52,12 +47,12 @@ export type PushResult = {
 };
 
 // 채널별 '원시 → 공통 ingest 형태' 정규화기. 등록된 채널(알리바바)은 변환, 그 외는 이미 공통이면 그대로 push.
-const NORMALIZERS: Record<string, (raw: unknown) => NormalizedConversation[]> = {
+const NORMALIZERS: Record<string, (raw: unknown) => IngestConversation[]> = {
   alibaba: (raw) => alibabaToIngestConversations(raw as never)
 };
 
 // 대화들의 메시지마다 pending 첨부를 업로드해 stored URL로 바꾼다(없으면 그대로). 미디어 없는 푸시엔 영향 없음.
-async function resolveConversationMedia(channel: string, conversations: NormalizedConversation[]): Promise<void> {
+async function resolveConversationMedia(channel: string, conversations: IngestConversation[]): Promise<void> {
   for (const conversation of conversations) {
     for (const message of conversation.messages ?? []) {
       const attachments = message.attachments;
@@ -84,15 +79,9 @@ async function pushAccount(channel: string, label: string): Promise<PushResult> 
     const response = await authedFetch("/api/agents/ingest", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ channel, accountLabel: label, conversations })
+      body: JSON.stringify({ channel, accountLabel: label, conversations, version: INGEST_CONTRACT_VERSION })
     });
-    const data = (await response.json().catch(() => ({}))) as {
-      ok?: boolean;
-      message?: string;
-      leadsCreated?: number;
-      threadsCreated?: number;
-      messagesCreated?: number;
-    };
+    const data = (await response.json().catch(() => ({}))) as IngestResponse;
     if (!response.ok || !data.ok) {
       return { channel, label, status: "error", detail: data.message ?? `HTTP ${response.status}` };
     }

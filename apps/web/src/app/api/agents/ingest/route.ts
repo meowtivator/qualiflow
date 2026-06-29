@@ -5,15 +5,11 @@
 
 import { NextResponse } from "next/server";
 
+import { parseIngestRequest } from "@qualiflow/core";
+
 import { agentTokenErrorResponse, bearerToken } from "@/lib/agents/agent-request";
 import { hmacHash, isPairingConfigured } from "@/lib/agents/pairing";
 import { createClient } from "@/lib/supabase/server";
-
-type IngestBody = {
-  channel?: unknown;
-  accountLabel?: unknown;
-  conversations?: unknown;
-};
 
 export async function POST(request: Request) {
   if (!isPairingConfigured()) {
@@ -25,22 +21,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "에이전트 토큰이 필요합니다." }, { status: 401 });
   }
 
-  let body: IngestBody;
+  let raw: unknown;
   try {
-    body = (await request.json()) as IngestBody;
+    raw = await request.json();
   } catch {
     return NextResponse.json({ ok: false, message: "본문 JSON을 읽을 수 없습니다." }, { status: 400 });
   }
 
-  const channel = typeof body.channel === "string" ? body.channel.trim() : "";
-  const accountLabel = typeof body.accountLabel === "string" ? body.accountLabel.trim() : "";
-  const conversations = body.conversations;
-  if (!channel || !accountLabel || !Array.isArray(conversations)) {
-    return NextResponse.json(
-      { ok: false, message: "channel, accountLabel, conversations(배열)가 필요합니다." },
-      { status: 400 }
-    );
+  // ★ingest 계약 검증은 @qualiflow/core 단일 출처(parseIngestRequest). 봉투(channel/accountLabel/
+  //   conversations 배열)만 본다 — 대화 내부 모양은 RPC 가 방어적으로 처리한다(동작 불변).
+  const parsed = parseIngestRequest(raw);
+  if (!parsed.ok) {
+    return NextResponse.json({ ok: false, message: parsed.error }, { status: 400 });
   }
+  const { channel, accountLabel, conversations } = parsed.value;
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("ingest_conversations", {

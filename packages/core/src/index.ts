@@ -2,6 +2,7 @@ export * from "./adapter";
 export * from "./channel";
 export * from "./channel-connection";
 export * from "./channel-identity";
+export * from "./ingest";
 export * from "./lead";
 export * from "./message";
 export * from "./primitives";

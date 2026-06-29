@@ -1,4 +1,4 @@
-import type { Lead, Message, MessageAttachment, MessageDirection, Thread } from "@qualiflow/core";
+import type { IngestConversation, Lead, Message, MessageDirection, Thread } from "@qualiflow/core";
 
 import type {
   AlibabaBuyerActivity,
@@ -197,25 +197,11 @@ export type AlibabaContactMetadata = {
   activity?: Partial<AlibabaBuyerActivity>;
 };
 
-export type AlibabaIngestConversation = {
-  threadId: string;
-  contact: {
-    id: string;
-    name?: string;
-    handle?: string;
-    companyName?: string;
-    countryCode?: string;
-    profileImageUrl?: string;
-    // 알리바바 enrichment(등급/SNS). 서버가 leads.lead_metadata 에 병합. 값 있을 때만 동봉.
-    metadata?: AlibabaContactMetadata;
-  };
-  messages: Array<{
-    id: string;
-    text: string;
-    sentAt: string;
-    direction: MessageDirection;
-    attachments?: MessageAttachment[]; // 사진·영상 등(있으면)
-  }>;
+// 알리바바 정규화 결과 = 공용 IngestConversation 계약(@qualiflow/core)을 그대로 따르되,
+//   contact.metadata 만 알리바바 enrichment(AlibabaContactMetadata: 등급/SNS/활동)로 좁힌다.
+//   ★모양의 단일 출처는 core. 여기선 metadata 타입만 특수화한다(서버가 leads.lead_metadata 에 병합).
+export type AlibabaIngestConversation = Omit<IngestConversation, "contact"> & {
+  contact: Omit<IngestConversation["contact"], "metadata"> & { metadata?: AlibabaContactMetadata };
 };
 
 // 알리바바 content는 <br/> 같은 HTML 조각을 포함한다 → 평문으로. <br> = 줄바꿈, 나머지 태그 제거.
