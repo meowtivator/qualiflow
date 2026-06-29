@@ -190,11 +190,11 @@ export type AlibabaContactMetadata = {
     facebook?: string;
   };
   // 주문 카운트(#5). 메시지 패널 상단 카드/주문 카운트 — 별도 JSONP(queryCustomerInfo)로 캡처해 흘린다.
-  // ★값이 있을 때만(추출기가 라이브 응답을 캡처했을 때만). 라이브 JSONP 키 미확정 → 형태는 잠정.
-  orderCounts?: AlibabaBuyerOrderCounts;
+  // ★값 있을 때만. 라이브 JSONP 키 미확정 → 형태 잠정. 추출기가 일부 칸만 채울 수 있어 Partial(전 필드 옵셔널).
+  orderCounts?: Partial<AlibabaBuyerOrderCounts>;
   // 고객 활동(#7, 지난 90일). "고객 활동" 패널 지표 — 위와 같은 JSONP 출처.
-  // ★값이 있을 때만. 라이브 JSONP 키 미확정 → 형태는 잠정.
-  activity?: AlibabaBuyerActivity;
+  // ★값 있을 때만. 라이브 JSONP 키 미확정 → 형태 잠정. Partial로 둬 부분 캡처를 정직하게 표현(cast 불필요).
+  activity?: Partial<AlibabaBuyerActivity>;
 };
 
 export type AlibabaIngestConversation = {
@@ -266,9 +266,9 @@ function buildContactMetadata(args: {
   // ★값이 '있는 칸만' 골라 담는다(undefined 칸은 생략) — 그래야 서버 jsonb merge가 빈 값으로 덮지 않는다.
   //   라이브 JSONP 응답 키 미확정이라, 추출기가 잠정 형태로 채워 줄 때만 그대로 통과시킨다(여기선 매핑 안 함).
   const orderCounts = pickDefined(args.orderCounts);
-  if (orderCounts) metadata.orderCounts = orderCounts as AlibabaBuyerOrderCounts;
+  if (orderCounts) metadata.orderCounts = orderCounts; // pickDefined가 Partial 반환 → metadata도 Partial이라 cast 불필요(타입 정직).
   const activity = pickDefined(args.activity);
-  if (activity) metadata.activity = activity as AlibabaBuyerActivity;
+  if (activity) metadata.activity = activity;
 
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }

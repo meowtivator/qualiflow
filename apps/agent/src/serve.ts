@@ -120,8 +120,9 @@ async function watchCycle(): Promise<void> {
     if (error instanceof NotPairedError) {
       console.log("   ⏭️  미페어링 — 클라우드 push는 건너뜁니다(로컬 fetch만 수행). 'pair <코드>'로 연결하면 자동 동기화됩니다.");
     } else {
-      // push 실패는 사이클 실패로 취급(백오프). fetch는 이미 .data에 저장됐으니 데이터 유실은 없다.
-      throw error;
+      // ★push 실패는 백오프시키지 않는다 — fetch는 이미 .data에 저장돼 유실 없고, push만 다음 사이클에
+      //   재시도한다. 예전엔 throw해서 push 장애가 fetch 주기(최대 30분)까지 끌어내렸다(실시간성 저하). 분리.
+      console.error(`   ❌ push 실패(다음 사이클에 재시도): ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }
