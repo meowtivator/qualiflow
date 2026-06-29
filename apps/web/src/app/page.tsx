@@ -10,6 +10,7 @@ import { loadConversationSource } from "@/lib/conversation-source";
 import { loadConversationSourceFromDb } from "@/lib/supabase-conversation-source";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient as createServerSupabaseClient } from "@/lib/supabase/server";
+import { ThemeToggle } from "./theme-toggle";
 
 type HomePageProps = {
   searchParams?: Promise<{
@@ -163,6 +164,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <p className="caption">채널 계정 연결을 시작하고, runtime과 adapter 책임을 분리해 관리합니다.</p>
             </div>
             <div className="status-group">
+              <ThemeToggle />
               <span className={`status-pill ${runtimeStatus.tone}`}>
                 {runtimeStatus.label}
                 {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
@@ -213,6 +215,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <p className="caption">로컬 에이전트를 페어링하고, 연결되어 저장된 에이전트를 확인합니다.</p>
             </div>
             <div className="status-group">
+              <ThemeToggle />
               <span className={`status-pill ${runtimeStatus.tone}`}>
                 {runtimeStatus.label}
                 {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
@@ -297,6 +300,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <p className="caption">채널별 inbound 문의를 같은 형태로 모아 보고, A 바이어를 우선 관리합니다.</p>
       </div>
       <div className="status-group">
+        <ThemeToggle />
         <span className={`status-pill ${source.status.tone}`}>
           {source.status.label}
           <small>{source.status.detail}</small>
