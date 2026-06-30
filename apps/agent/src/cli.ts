@@ -11,6 +11,7 @@ import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, s
 import { fetchAgentIdentity } from "./api-client";
 import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
+import { pairWhatsAppWeb, scrapeWhatsAppWebNames } from "./connectors/whatsapp-web";
 import { loadLocalEnv } from "./env";
 import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, listChannelThreads, loginAlibaba, sendMessage } from "./fetch";
 import { pair } from "./pair";
@@ -211,6 +212,29 @@ async function main() {
       console.log("✅ 페어링 완료 — 에이전트 토큰을 OS 키체인에 저장했습니다.");
       console.log(`   agentId=${agentId}`);
       console.log(`   workspaceId=${workspaceId}`);
+      return;
+    }
+
+    case "wa-web": {
+      // WhatsApp Web 이름 리더(Baileys 보조). 세션은 .auth/whatsapp-web[--label] 에 로컬 저장.
+      //   wa-web pair  [label]   가시 모드로 web.whatsapp.com 띄움 → 폰으로 QR 1회 스캔(이후 기억)
+      //   wa-web names [label]   페어링된 세션에서 채팅 목록의 표시 이름을 긁어 출력(스크래퍼 검증용)
+      const sub = args[1];
+      // whatsapp-web 은 'add'로 등록하는 채널이 아니므로 라벨을 직접 처리한다. 기본 'first' = 기존
+      // whatsapp(Baileys) 세션 라벨과 맞춰, 같은 계정의 lid-mapping 과 정렬되게 한다.
+      const label = sanitizeLabel(args[2] ?? "first");
+      const profileDir = sessionPath("whatsapp-web", label);
+      if (sub === "pair") {
+        const state = await pairWhatsAppWeb(profileDir);
+        console.log(state === "ready" ? "✅ 페어링 완료." : `⚠️ 페어링 미완료(${state}) — 다시 시도하세요.`);
+      } else if (sub === "names") {
+        const contacts = await scrapeWhatsAppWebNames(profileDir, { offscreen: false });
+        console.log(`📇 표시 이름 ${contacts.length}건:`);
+        for (const c of contacts) console.log(`   ${c.name}${c.phone ? `  (${c.phone})` : ""}`);
+      } else {
+        console.error("사용법: wa-web <pair|names> [label]");
+        process.exitCode = 1;
+      }
       return;
     }
 
