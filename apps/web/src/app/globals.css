@@ -1,4 +1,20 @@
+/*
+ * 색은 전부 토큰(CSS 변수)으로만 쓴다. 라이트/다크 두 팔레트를 여기서 정의하고,
+ * 아래 규칙·컴포넌트는 토큰만 참조한다(하드코딩 hex 금지 → 다크에서도 회귀 없음).
+ *
+ * 적용 우선순위:
+ *   1) :root            = 라이트 기본값
+ *   2) prefers-color-scheme: dark = OS가 다크면 자동으로 다크 팔레트
+ *   3) [data-theme="..."] = 헤더 토글이 명시 지정한 값(OS 설정을 이김, localStorage 저장)
+ *
+ * 토큰 분류:
+ *   surface/ink/hairline = 표면·글자·경계 (라이트↔다크에서 명도 반전)
+ *   primary/success/warning/danger = 브랜드·상태 색 (다크에선 살짝 밝게)
+ *   *-soft = 위 상태색의 옅은 배경(뱃지/필 배경) — color-mix로 표면 위에 섞어 자동 대비
+ *   overlay/shadow = 모달 뒷배경·그림자
+ */
 :root {
+  color-scheme: light;
   --canvas: #fbfbfa;
   --surface-1: #ffffff;
   --surface-2: #f4f4f3;
@@ -9,11 +25,101 @@
   --ink-muted: #5f5f5a;
   --ink-subtle: #8a8a85;
   --primary: #5e6ad2;
+  --primary-strong: #4e59bf;
   --primary-fill: #ecedfb;
   --on-primary: #ffffff;
+  --on-accent: #ffffff;
   --success: #16794c;
   --warning: #8a6116;
   --danger: #a33131;
+  /* 상태색 옅은 배경 — 표면 위에 상태색을 섞어 만든다(다크에서도 자동 대비). */
+  --success-soft: color-mix(in srgb, var(--success) 12%, var(--surface-1));
+  --warning-soft: color-mix(in srgb, var(--warning) 14%, var(--surface-1));
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface-1));
+  /* 모달 뒷배경 어둡게 + 그림자 색(다크에선 더 진하게). */
+  --overlay: rgba(20, 22, 28, 0.2);
+  --shadow-color: rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #16171a;
+    --surface-1: #1d1f23;
+    --surface-2: #25282d;
+    --surface-3: #2f333a;
+    --hairline: #33373e;
+    --hairline-strong: #424751;
+    --ink: #ecedf0;
+    --ink-muted: #a6abb5;
+    --ink-subtle: #7c818c;
+    --primary: #8b94e6;
+    --primary-strong: #a2aaf0;
+    --primary-fill: #2a2e44;
+    --on-primary: #14151c;
+    --on-accent: #ffffff;
+    --success: #4cc38a;
+    --warning: #e0b341;
+    --danger: #e5817f;
+    --success-soft: color-mix(in srgb, var(--success) 18%, var(--surface-1));
+    --warning-soft: color-mix(in srgb, var(--warning) 18%, var(--surface-1));
+    --danger-soft: color-mix(in srgb, var(--danger) 18%, var(--surface-1));
+    --overlay: rgba(0, 0, 0, 0.55);
+    --shadow-color: rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* 헤더 토글이 명시 지정 — data-theme 가 있으면 OS 설정을 이긴다. */
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #fbfbfa;
+  --surface-1: #ffffff;
+  --surface-2: #f4f4f3;
+  --surface-3: #ededeb;
+  --hairline: #e7e7e4;
+  --hairline-strong: #d6d6d2;
+  --ink: #1c1c1a;
+  --ink-muted: #5f5f5a;
+  --ink-subtle: #8a8a85;
+  --primary: #5e6ad2;
+  --primary-strong: #4e59bf;
+  --primary-fill: #ecedfb;
+  --on-primary: #ffffff;
+  --on-accent: #ffffff;
+  --success: #16794c;
+  --warning: #8a6116;
+  --danger: #a33131;
+  --success-soft: color-mix(in srgb, var(--success) 12%, var(--surface-1));
+  --warning-soft: color-mix(in srgb, var(--warning) 14%, var(--surface-1));
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface-1));
+  --overlay: rgba(20, 22, 28, 0.2);
+  --shadow-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #16171a;
+  --surface-1: #1d1f23;
+  --surface-2: #25282d;
+  --surface-3: #2f333a;
+  --hairline: #33373e;
+  --hairline-strong: #424751;
+  --ink: #ecedf0;
+  --ink-muted: #a6abb5;
+  --ink-subtle: #7c818c;
+  --primary: #8b94e6;
+  --primary-strong: #a2aaf0;
+  --primary-fill: #2a2e44;
+  --on-primary: #14151c;
+  --on-accent: #ffffff;
+  --success: #4cc38a;
+  --warning: #e0b341;
+  --danger: #e5817f;
+  --success-soft: color-mix(in srgb, var(--success) 18%, var(--surface-1));
+  --warning-soft: color-mix(in srgb, var(--warning) 18%, var(--surface-1));
+  --danger-soft: color-mix(in srgb, var(--danger) 18%, var(--surface-1));
+  --overlay: rgba(0, 0, 0, 0.55);
+  --shadow-color: rgba(0, 0, 0, 0.5);
 }
 
 html {
@@ -210,13 +316,19 @@ a {
   min-width: 0;
 }
 
+/* 헤더 다크모드 토글 — status-group 안에서 줄어들지 않게 고정. */
+.theme-toggle {
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
 .status-pill.ok {
-  border-color: rgba(22, 121, 76, 0.22);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
   color: var(--success);
 }
 
 .status-pill.warning {
-  border-color: rgba(138, 97, 22, 0.24);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
   color: var(--warning);
 }
 
@@ -277,13 +389,13 @@ a {
 }
 
 .connector-card.connected {
-  border-color: rgba(22, 121, 76, 0.28);
-  background: linear-gradient(0deg, rgba(22, 121, 76, 0.035), rgba(22, 121, 76, 0.035)), var(--surface-1);
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
+  background: color-mix(in srgb, var(--success) 5%, var(--surface-1));
 }
 
 .connector-card.checking {
-  border-color: rgba(95, 106, 226, 0.28);
-  background: linear-gradient(0deg, rgba(95, 106, 226, 0.035), rgba(95, 106, 226, 0.035)), var(--surface-1);
+  border-color: color-mix(in srgb, var(--primary) 32%, transparent);
+  background: color-mix(in srgb, var(--primary) 5%, var(--surface-1));
 }
 
 .connector-logo-wrap {
@@ -438,7 +550,7 @@ a {
 
 .connector-status.active,
 .connector-status.connected {
-  background: #e7f6ee;
+  background: var(--success-soft);
   color: var(--success);
 }
 
@@ -448,12 +560,12 @@ a {
 }
 
 .connector-status.needs_relogin {
-  background: #fff3d8;
+  background: var(--warning-soft);
   color: var(--warning);
 }
 
 .connector-status.error {
-  background: #fdeaea;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -475,8 +587,8 @@ a {
 }
 
 .connector-remove-button:hover {
-  border-color: rgba(195, 60, 60, 0.32);
-  background: #fdeaea;
+  border-color: color-mix(in srgb, var(--danger) 36%, transparent);
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -516,8 +628,8 @@ a {
 }
 
 .connector-connect-button:hover {
-  background: #4e59bf;
-  border-color: #4e59bf;
+  background: var(--primary-strong);
+  border-color: var(--primary-strong);
 }
 
 .connector-connect-button:disabled {
@@ -540,7 +652,7 @@ a {
 .connector-connect-button.danger {
   border-color: var(--danger);
   background: var(--danger);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .connector-connect-button.danger:disabled {
@@ -554,7 +666,7 @@ a {
   inset: 0;
   display: grid;
   place-items: center;
-  background: rgba(20, 22, 28, 0.2);
+  background: var(--overlay);
   padding: 20px;
 }
 
@@ -565,7 +677,7 @@ a {
   border: 1px solid var(--hairline-strong);
   border-radius: 16px;
   background: var(--surface-1);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 24px 80px var(--shadow-color);
   padding: 18px;
 }
 
@@ -608,8 +720,8 @@ a {
 }
 
 .connector-removal-options button.danger.active {
-  border-color: rgba(195, 60, 60, 0.42);
-  background: #fdeaea;
+  border-color: color-mix(in srgb, var(--danger) 46%, transparent);
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -637,14 +749,14 @@ a {
   border: 1px solid var(--hairline-strong);
   border-radius: 12px;
   background: var(--surface-1);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 14px 40px var(--shadow-color);
   color: var(--ink);
   font-weight: 650;
   padding: 11px 13px;
 }
 
 .connector-toast.success {
-  border-color: rgba(22, 121, 76, 0.28);
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
   color: var(--success);
 }
 
@@ -653,7 +765,7 @@ a {
 }
 
 .connector-toast.warning {
-  border-color: rgba(171, 111, 0, 0.3);
+  border-color: color-mix(in srgb, var(--warning) 34%, transparent);
   color: var(--warning);
 }
 
@@ -679,12 +791,136 @@ a {
 .messenger-layout {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
+  grid-template-columns: 196px minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
   gap: 12px;
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 16px 20px 20px;
+}
+
+/* 사이드바가 접히면 첫 칸을 아이콘 폭으로 줄인다. */
+.messenger-layout.nav-collapsed {
+  grid-template-columns: 52px minmax(260px, 320px) minmax(360px, 1fr) minmax(280px, 340px);
+}
+
+/* 필터 결과가 빈 화면: [사이드바 | 안내] 2칸. */
+.messenger-layout.filter-empty {
+  grid-template-columns: 196px minmax(0, 1fr);
+}
+
+.messenger-layout.filter-empty.nav-collapsed {
+  grid-template-columns: 52px minmax(0, 1fr);
+}
+
+/* 인박스 내부 사이드바(맨 왼쪽 폴더/필터). */
+.inbox-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+}
+
+.inbox-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--hairline);
+  padding: 14px;
+}
+
+.inbox-sidebar.collapsed .inbox-sidebar-head {
+  justify-content: center;
+  padding: 14px 8px;
+}
+
+.inbox-sidebar-title {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inbox-collapse {
+  flex: 0 0 auto;
+}
+
+.inbox-folders {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.inbox-sidebar.collapsed .inbox-folders {
+  justify-items: center;
+  padding: 8px 6px;
+}
+
+.inbox-folder {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-left: 2px solid transparent;
+  color: var(--ink-muted);
+  padding: 8px 10px;
+}
+
+.inbox-sidebar.collapsed .inbox-folder {
+  grid-template-columns: auto;
+  justify-items: center;
+  padding: 8px;
+}
+
+.inbox-folder:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.inbox-folder.active {
+  border-left-color: var(--primary);
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.inbox-folder-icon {
+  display: grid;
+  place-items: center;
+  color: inherit;
+}
+
+.inbox-folder-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.inbox-folder-count {
+  color: var(--ink-subtle);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inbox-folder.active .inbox-folder-count {
+  color: var(--ink-muted);
+}
+
+.messenger-empty.inline {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  background: var(--surface-1);
+  text-align: center;
+  padding: 24px;
 }
 
 .thread-panel,
@@ -794,10 +1030,13 @@ a {
 }
 
 .lead-avatar-image {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   border-radius: inherit;
   object-fit: cover;
+  object-position: center;
 }
 
 .channel-badge {
@@ -811,7 +1050,7 @@ a {
   border: 2px solid var(--surface-1);
   border-radius: 999px;
   background: var(--channel-color);
-  color: #ffffff;
+  color: var(--on-accent);
   font-size: 10px;
   font-weight: 750;
 }
@@ -868,17 +1107,17 @@ a {
 }
 
 .grade-a {
-  background: #e7f6ee;
+  background: var(--success-soft);
   color: var(--success);
 }
 
 .grade-b {
-  background: #fff3d8;
+  background: var(--warning-soft);
   color: var(--warning);
 }
 
 .grade-c {
-  background: #fde7e7;
+  background: var(--danger-soft);
   color: var(--danger);
 }
 
@@ -926,7 +1165,7 @@ a {
 }
 
 .message-bubble.outbound .message-header span {
-  color: rgba(255, 255, 255, 0.72);
+  color: color-mix(in srgb, var(--on-primary) 72%, transparent);
 }
 
 .message-header {
@@ -937,6 +1176,47 @@ a {
 .message-bubble p {
   margin: 7px 0 0;
   line-height: 1.55;
+}
+
+/* 미디어 첨부(사진·영상·파일). 텍스트 아래에 세로로 쌓는다. */
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.message-attachment.image {
+  display: block;
+  max-width: 280px;
+}
+
+.message-attachment.image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--hairline);
+}
+
+.message-attachment.video {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  border: 1px solid var(--hairline);
+}
+
+.message-attachment.file {
+  display: inline-block;
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+/* url이 없는 첨부(불러오는 중/제한/실패)의 자리표시 — 흐리게. */
+.message-attachment.placeholder {
+  display: inline-block;
+  font-size: 13px;
+  opacity: 0.72;
+  font-style: italic;
 }
 
 .reply-draft {
@@ -1326,10 +1606,22 @@ a {
   }
 
   .messenger-layout {
-    grid-template-columns: minmax(260px, 34vw) minmax(330px, 1fr) minmax(260px, 32vw);
+    grid-template-columns: 176px minmax(260px, 34vw) minmax(330px, 1fr) minmax(260px, 32vw);
     overflow-x: auto;
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .messenger-layout.nav-collapsed {
+    grid-template-columns: 52px minmax(260px, 34vw) minmax(330px, 1fr) minmax(260px, 32vw);
+  }
+
+  .messenger-layout.filter-empty {
+    grid-template-columns: 176px minmax(0, 1fr);
+  }
+
+  .messenger-layout.filter-empty.nav-collapsed {
+    grid-template-columns: 52px minmax(0, 1fr);
   }
 
   .message-timeline {

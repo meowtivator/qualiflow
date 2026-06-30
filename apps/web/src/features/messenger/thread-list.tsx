@@ -3,14 +3,17 @@ import Link from "next/link";
 
 import { formatShortDate, getLeadLabel, getMetadataText } from "./format";
 import { LeadAvatar } from "./lead-avatar";
-import type { ThreadListItem } from "./types";
+import type { InboxFilter, ThreadListItem } from "./types";
 
 type ThreadListProps = {
   threads: ThreadListItem[];
   selectedThreadId: string;
+  // 스레드를 눌러도 현재 필터/접힘 상태가 URL에서 사라지지 않도록 함께 들고 다닌다.
+  activeFilter: InboxFilter;
+  navCollapsed: boolean;
 };
 
-export function ThreadList({ threads, selectedThreadId }: ThreadListProps) {
+export function ThreadList({ threads, selectedThreadId, activeFilter, navCollapsed }: ThreadListProps) {
   return (
     <aside className="thread-panel">
       <div className="panel-toolbar">
@@ -25,19 +28,39 @@ export function ThreadList({ threads, selectedThreadId }: ThreadListProps) {
 
       <div className="thread-list">
         {threads.map((item) => (
-          <ThreadPreview key={item.thread.id} item={item} selected={item.thread.id === selectedThreadId} />
+          <ThreadPreview
+            key={item.thread.id}
+            item={item}
+            selected={item.thread.id === selectedThreadId}
+            activeFilter={activeFilter}
+            navCollapsed={navCollapsed}
+          />
         ))}
       </div>
     </aside>
   );
 }
 
-function ThreadPreview({ item, selected }: { item: ThreadListItem; selected: boolean }) {
+function ThreadPreview({
+  item,
+  selected,
+  activeFilter,
+  navCollapsed
+}: {
+  item: ThreadListItem;
+  selected: boolean;
+  activeFilter: InboxFilter;
+  navCollapsed: boolean;
+}) {
   const { thread, lead, channel, qualification } = item;
   const nextAction = getMetadataText(thread.metadata?.nextAction, "다음 액션 확인 필요");
+  const query: Record<string, string> = { thread: thread.id, filter: activeFilter };
+  if (navCollapsed) {
+    query.inbox = "collapsed";
+  }
 
   return (
-    <Link className={`thread-row ${selected ? "selected" : ""}`} href={{ pathname: "/", query: { thread: thread.id } }}>
+    <Link className={`thread-row ${selected ? "selected" : ""}`} href={{ pathname: "/", query }}>
       <LeadAvatar channel={channel} lead={lead} />
       <div className="thread-copy">
         <div className="thread-title-line">

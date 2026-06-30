@@ -31,6 +31,30 @@ export type AlibabaRawContact = {
   companyName?: string;
   complianceCountryCode?: string; // 예: "KR"
   profileImageUrl?: string;
+  // ★구매 등급(L1~L4)은 연락처 목록 행의 React fiber에 '값으로' 직접 들어있다(프로브로 확정):
+  //   memoizedProps.item.contact.userNewLevel = "L2" 같은 값, userNewLevelIcon = 등급 뱃지 이미지,
+  //   memberId = 알리바바 내부 식별자. 추출기(extract-session)가 행 fiber에서 직접 읽어 채운다.
+  userNewLevel?: string; // 구매 등급 값(예: "L1"~"L4"). 없으면 등급 미부여.
+  userNewLevelIcon?: string; // 등급 뱃지 이미지 URL(있을 때).
+  memberId?: string; // 알리바바 내부 식별자.
+  // (폴백 보존) 등급 뱃지 URL. 등급 값은 위 userNewLevel을 우선 쓴다.
+  alibabaGradeBadgeUrl?: string;
+  // ★디스커버리(웹 검색)로 찾은 후보 SNS URL. 알리바바 화면 fiber엔 없다 — 추출 후 에이전트(라이브
+  //   브라우저가 가능한 Node)가 회사명+국가로 검색해 채운다(옵트인 ALIBABA_SNS=1). 비면 미수집.
+  //   채워지면 alibabaToIngestConversations 가 buildContactMetadata({ sns }) 로 흘려 metadata.sns 가 된다.
+  sns?: {
+    instagram?: string;
+    linkedin?: string;
+    facebook?: string;
+  };
+  // ★주문 카운트(#5)·고객 활동(#7) 통로. 이 둘은 메시지 fiber가 아니라 별도 원격 모듈
+  //   (customerBehaviorData)이 JSONP(queryCustomerInfo)로 받아오므로(아래 두 타입 주석 참고),
+  //   추출기가 그 응답을 캡처해 '연락처(바이어) 단위'로 여기에 실어 둔다(값 있을 때만).
+  //   alibabaToIngestConversations 가 이 값을 buildContactMetadata({ orderCounts, activity })로
+  //   흘려 lead_metadata 로 보낸다. ★activity 라이브 키 확정·배선됨(extract-session.buyerInfoToActivity,
+  //   probe 2026-06). orderCounts(카드수)는 이 엔드포인트에 없음 — 메시지 패널 chatData 가 출처(별개).
+  orderCounts?: AlibabaBuyerOrderCounts;
+  activity?: AlibabaBuyerActivity;
 };
 
 // "고객 활동" 패널(지난 90일)의 지표.

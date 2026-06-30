@@ -13,18 +13,113 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { chromium, type BrowserContext, type Page } from "playwright-core";
+import { chromium, type BrowserContext, type Page, type Response } from "playwright-core";
 
-import type { AlibabaRawConversation } from "../raw-types";
+import type { AlibabaBuyerActivity, AlibabaRawConversation } from "../raw-types";
 import { dataFile, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
+
+// ────────────────────────────────────────────────────────────────────────
+// 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 캡처(진단/배선 준비 — 매핑은 보류).
+//
+// 왜 따로 잡나: "고객 활동"·주문 카운트는 메시지 fiber(itemData)가 아니라 별도 원격 모듈
+//   (customerBehaviorData)이 JSONP(queryCustomerInfo)로 받아온다. 그래서 메시지 추출(EXTRACT_IN_PAGE)
+//   과는 다른 경로 — 네트워크 응답을 가로채야 한다. (record-inquiry.ts 의 page.on("response") 패턴 미러링.)
+//
+// ★라이브 JSONP 응답의 정확한 '키 이름'과 '엔드포인트 URL'이 아직 미확정이다. 그래서 여기서는
+//   추측해서 키를 매핑하지 않는다 — URL이 customerInfo/behavior 류로 보이는 응답의 '원문(raw)'을
+//   그대로 캡처해 파일로 덤프만 한다. 사람이 그 덤프를 보고 어느 키가 주문 카운트/활동인지 지목하면,
+//   그때 normalize 의 AlibabaBuyerOrderCounts/AlibabaBuyerActivity 로 매핑하는 코드를 붙인다.
+//   (지금 단계: 캡처+덤프 = '라이브 키 확정'을 위한 1회성 진단. ALIBABA_PROBE 일 때만 동작.)
+//
+// URL 매칭은 '넓게' 잡는다(엔드포인트명도 미확정이라): queryCustomerInfo 가 주 후보지만,
+//   customerBehavior/customerInfo/behaviorData 류도 함께 잡아 덤프해 비교한다.
+const CUSTOMER_INFO_URL_RE = /queryCustomerInfo|customerBehavior|customerInfo|behaviorData/i;
+
+type CapturedJsonpResponse = {
+  url: string;
+  status: number;
+  contentType: string;
+  // JSONP는 보통 `callbackName({...})` 꼴이라 순수 JSON이 아니다. 파싱은 시도만 하고,
+  //   실패해도 원문(rawBody)을 그대로 남긴다(사람이 키를 찾을 수 있게). 절대 키를 지어내지 않는다.
+  parsed?: unknown;
+  rawBody: string;
+};
+
+// page.on("response") 로 customerInfo/behavior 류 응답을 모은다. 반환된 배열은 페이지 수명 동안 채워진다.
+//   ★읽기 전용: 응답 본문만 읽고(가능할 때) 아무것도 바꾸지 않는다. 본문 길이는 상한으로 자른다(폭주 방지).
+function captureCustomerInfoResponses(page: Page, maxBodyChars = 20_000): CapturedJsonpResponse[] {
+  const captured: CapturedJsonpResponse[] = [];
+  page.on("response", (response: Response) => {
+    const url = response.url();
+    if (!CUSTOMER_INFO_URL_RE.test(url)) return;
+    // 본문 읽기는 비동기 — 실패(이미 소비/리다이렉트 등)해도 조용히 건너뛴다.
+    void response
+      .text()
+      .then((rawText) => {
+        const body = rawText.slice(0, maxBodyChars);
+        const entry: CapturedJsonpResponse = {
+          url,
+          status: response.status(),
+          contentType: response.headers()["content-type"] ?? "",
+          rawBody: body
+        };
+        // JSONP 껍데기(callback(...))를 벗겨 안쪽 JSON만 파싱 시도. 실패하면 parsed는 비워 둔다.
+        const inner = body.match(/^[^({]*\(([\s\S]*)\)\s*;?\s*$/);
+        const jsonText = inner ? inner[1] : body;
+        try {
+          entry.parsed = JSON.parse(jsonText);
+        } catch {
+          // 순수 JSON도 JSONP도 아님 → parsed 생략, rawBody만 남긴다(사람이 직접 키 확인).
+        }
+        captured.push(entry);
+      })
+      .catch(() => undefined);
+  });
+  return captured;
+}
+
+// queryCustomerInfo JSONP 한 건에서 buyerInfo와 등급(growthLevel/highQualityLevelTag)을 꺼낸다(없으면 undefined).
+function readBuyerInfo(
+  entry: CapturedJsonpResponse
+): { buyerInfo: Record<string, unknown>; grade?: string } | undefined {
+  const root = entry.parsed as { data?: { data?: { buyerInfo?: Record<string, unknown> } } } | undefined;
+  const buyerInfo = root?.data?.data?.buyerInfo;
+  if (!buyerInfo || typeof buyerInfo !== "object") return undefined;
+  const growth = (buyerInfo.growthLevelInfo as { growthLevel?: unknown } | undefined)?.growthLevel;
+  const hq = buyerInfo.highQualityLevelTag;
+  const grade = typeof growth === "string" ? growth : typeof hq === "string" ? hq : undefined;
+  return { buyerInfo, grade };
+}
+
+// buyerInfo → AlibabaBuyerActivity. ★음수(-1=숨김)·null·비수치는 버린다(키를 지어내지 않는다).
+//   라이브 키 확정(probe 2026-06, alibaba-customer-info-probe.json): productViewCount/validInquiryCount/
+//   validRfqCount/loginDays/spamInquiryMarkedBySupplierCount/addedToBlacklistCount/totalOrderCount.
+function buyerInfoToActivity(buyerInfo: Record<string, unknown>): AlibabaBuyerActivity {
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : undefined;
+  const loginRaw = buyerInfo.loginDays;
+  return {
+    productViews: num(buyerInfo.productViewCount),
+    validInquiries: num(buyerInfo.validInquiryCount),
+    validRfqs: num(buyerInfo.validRfqCount),
+    loginDays: loginRaw == null ? null : num(loginRaw),
+    spamInquiries: num(buyerInfo.spamInquiryMarkedBySupplierCount),
+    blacklistCount: num(buyerInfo.addedToBlacklistCount),
+    totalTrades: num(buyerInfo.totalOrderCount)
+  };
+}
+// ────────────────────────────────────────────────────────────────────────
 
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
-const MAX_CONVERSATIONS = 30;
+// 한 번에 추출할 최대 대화(바이어) 수. 기본 200으로 상향(예전 30은 너무 낮아 바이어가 잘렸다).
+// 바이어가 더 많으면 QUALIFLOW_ALIBABA_MAX_CONV로 올린다. ★주의: 대화당 메시지까지 깊게 긁어 수백이면 fetch가 오래 걸림.
+const MAX_CONVERSATIONS = Number(process.env.QUALIFLOW_ALIBABA_MAX_CONV) || 200;
 const OPEN_TIMEOUT_MS = 10_000; // 한 대화를 열고 그 대화 메시지가 fiber에 뜰 때까지 최대 대기
 const POLL_MS = 400; // 폴링 간격
 const MAX_SCROLLS = 60; // 한 대화에서 위로 스크롤하며 옛 메시지를 끌어올 최대 횟수(폭주 방지 상한)
-const MAX_LIST_SCROLLS = 40; // 연락처 목록을 아래로 스크롤하며 더 많은 바이어를 불러올 최대 횟수(폭주 방지 상한)
+// 연락처 목록을 아래로 스크롤하며 더 많은 바이어를 불러올 최대 횟수. 기본 150(바이어 수백 대비 상향).
+const MAX_LIST_SCROLLS = Number(process.env.QUALIFLOW_ALIBABA_MAX_LIST_SCROLLS) || 150;
 const SCROLL_WAIT_MS = 800; // 한 번 스크롤한 뒤 옛 메시지가 그려지거나(가상 리스트) 불러와질(지연 로딩) 때까지 대기
 
 const INBOX_READY_TIMEOUT_MS = 40_000; // 대화 목록이 뜰 때까지 최대 대기
@@ -143,7 +238,11 @@ const EXTRACT_IN_PAGE = String.raw`
         contact.avatar ||
         contact.headImageUrl ||
         contact.headUrl ||
-        contact.logoUrl
+        contact.logoUrl,
+      // 등급 폴백(메시지 fiber의 contact에 있을 때만 — 주 출처는 행 fiber).
+      userNewLevel: contact.userNewLevel,
+      userNewLevelIcon: contact.userNewLevelIcon,
+      memberId: contact.memberId
     },
     messages
   };
@@ -212,6 +311,76 @@ const EXTRACT_CALL = `(${EXTRACT_IN_PAGE})()`;
 const SCROLL_CALL = `(${SCROLL_UP_IN_PAGE})()`;
 const SCROLL_LIST_DOWN_CALL = `(${SCROLL_LIST_DOWN_IN_PAGE})()`;
 
+// 🔎 등급 프로브(진단 전용): 연락처 목록 첫 N행의 React 내부 데이터(memoizedProps)에서 스칼라 필드를
+//    "있는 그대로" 떠낸다. 등급(L1~L4)은 뱃지 이미지가 아니라 이 데이터의 어떤 필드(buyerLevel/level/
+//    grade/vipLevel 등)일 확률이 높으므로, 추측 없이 전부 덤프해 사람이 어느 필드가 등급인지 지목하게 한다.
+//    해석/매핑은 하지 않는다(읽기 전용). ALIBABA_PROBE 환경변수일 때만 호출된다.
+const PROBE_IN_PAGE = String.raw`
+() => {
+  function fiberKey(el) {
+    return Object.keys(el).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+  }
+  // 객체에서 스칼라(문자열/숫자/불리언) 잎값을 depth 단계까지 모은다(중첩 객체는 한 단계 더 들어간다).
+  function scalars(obj, depth) {
+    const out = {};
+    if (!obj || typeof obj !== "object") return out;
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (v === null || v === undefined) continue;
+      const t = typeof v;
+      if (t === "string" || t === "number" || t === "boolean") out[k] = v;
+      else if (t === "object" && !Array.isArray(v) && depth > 1) {
+        const sub = scalars(v, depth - 1);
+        if (Object.keys(sub).length) out[k] = sub;
+      }
+    }
+    return out;
+  }
+  const KEYS = ["itemData","data","item","contact","record","buyer","conversation","customer","info","detail","rowData","node","value","props"];
+  const rows = Array.from(document.querySelectorAll(".contact-item-container")).slice(0, 5);
+  const dump = [];
+  for (const row of rows) {
+    const entry = { dataset: {}, imgs: [], fiber: {} };
+    for (const a of Array.from(row.attributes)) {
+      if (a.name.indexOf("data-") === 0) entry.dataset[a.name] = a.value;
+    }
+    // 행 안의 모든 이미지 URL(아바타 + 등급/인증 뱃지). 등급이 React 데이터가 아니라 뱃지 URL에만
+    // 인코딩돼 있어도, 5개 행(등급이 다르면)을 비교하면 어떤 URL이 등급인지 드러난다.
+    for (const im of Array.from(row.querySelectorAll("img"))) {
+      if (im.src) entry.imgs.push(im.src);
+    }
+    const k = fiberKey(row);
+    if (k) {
+      let fiber = row[k];
+      let hops = 0;
+      while (fiber && hops < 12) {
+        const p = fiber.memoizedProps;
+        if (p && typeof p === "object") {
+          for (const key of KEYS) {
+            if (p[key] && typeof p[key] === "object" && !entry.fiber[key]) {
+              entry.fiber[key] = scalars(p[key], 2);
+            }
+          }
+          if (!entry.fiber.__topProps) {
+            const top = scalars(p, 1);
+            if (Object.keys(top).length) entry.fiber.__topProps = top;
+          }
+        }
+        fiber = fiber.return;
+        hops += 1;
+      }
+    }
+    dump.push(entry);
+  }
+  return { rowCount: rows.length, rows: dump };
+}
+`;
+const PROBE_CALL = `(${PROBE_IN_PAGE})()`;
+
+// 연락처 행에서 (a)아바타 URL, (b)등급 뱃지 URL, (c)행 fiber의 구매 등급(userNewLevel/Icon/memberId)을
+//   읽어 { avatarUrl, gradeBadgeUrl, userNewLevel, userNewLevelIcon, memberId } 로 반환한다.
+//   - 아바타: imgextra 규격 뱃지(...tps-WxH.png)를 '제외'한 진짜 사진 URL(없으면 undefined → 이니셜 폴백).
+//   - 등급: 행 React fiber의 userNewLevel 값을 직접 읽는다(프로브 확정). 형태검증은 normalize.normalizeAlibabaGrade.
 function buildReadRowProfileImageScript(cid: string | null, index: number) {
   const serialized = JSON.stringify({ cid, index });
 
@@ -255,12 +424,56 @@ function buildReadRowProfileImageScript(cid: string | null, index: number) {
         );
       }
 
+      // 규격 뱃지(예: imgextra ...tps-136-80.png) = 아바타가 아니라 공용 아이콘. 한 번 훑으며
+      // 아바타(첫 번째 비-뱃지 사진)와 등급 뱃지(첫 번째 규격 뱃지)를 따로 모은다.
+      const BADGE_RE = /[-_]\d+[-x]\d+\.(png|webp)/i;
+      let avatarUrl = undefined;
+      let gradeBadgeUrl = undefined;
       for (const candidate of candidates) {
         const url = absolutize(candidate);
-        if (url && /^https?:\/\//.test(url)) return url;
+        if (!url || !/^https?:\/\//.test(url)) continue;
+        if (BADGE_RE.test(url)) {
+          // ★등급/인증 뱃지 후보 — 버리지 않고 첫 번째를 잡아둔다(등급 해석은 normalize에서).
+          // LIVE-VERIFY: 한 행에 뱃지가 여러 개일 수 있다(등급 뱃지 + 인증 뱃지 등). 라이브에서
+          //   "구매 등급(L1~L4)"을 표현하는 게 정확히 어느 img/URL 인지 확인하고, 필요하면 여기서
+          //   등급 뱃지만 골라내도록 좁혀야 한다(현재는 '첫 규격 뱃지'를 잠정 채택).
+          if (!gradeBadgeUrl) gradeBadgeUrl = url;
+        } else if (!avatarUrl) {
+          avatarUrl = url; // 진짜 아바타(sc04/kf의 정사각 .jpg)
+        }
       }
 
-      return undefined;
+      // 행의 React fiber에서 구매 등급을 '값으로' 직접 읽는다(뱃지 URL 추측보다 정확).
+      // 프로브 확정: memoizedProps.item.contact.userNewLevel(백업 item.userNewLevel),
+      //   userNewLevelIcon=등급 뱃지, item.memberId=내부 식별자. (PROBE_IN_PAGE와 같은 fiber 훑기.)
+      let userNewLevel = undefined;
+      let userNewLevelIcon = undefined;
+      let memberId = undefined;
+      const fk = Object.keys(row).find((k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"));
+      if (fk) {
+        let fiber = row[fk];
+        let hops = 0;
+        while (fiber && hops < 12 && userNewLevel === undefined) {
+          const p = fiber.memoizedProps;
+          if (p && typeof p === "object") {
+            for (const base of [p.item, p.data, p.contact, p]) {
+              if (!base || typeof base !== "object") continue;
+              const c = base.contact && typeof base.contact === "object" ? base.contact : base;
+              if (c.userNewLevel != null && userNewLevel === undefined) {
+                userNewLevel = String(c.userNewLevel);
+                if (c.userNewLevelIcon) userNewLevelIcon = String(c.userNewLevelIcon);
+              }
+              if ((base.memberId != null || c.memberId != null) && memberId === undefined) {
+                memberId = String(base.memberId != null ? base.memberId : c.memberId);
+              }
+            }
+          }
+          fiber = fiber.return;
+          hops += 1;
+        }
+      }
+
+      return { avatarUrl, gradeBadgeUrl, userNewLevel, userNewLevelIcon, memberId };
     })()
   `;
 }
@@ -285,6 +498,11 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
   const context = browser.contexts()[0];
   const page = context.pages()[0] ?? (await context.newPage());
+
+  // 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 캡처는 goto '전에' 리스너를 건다(인박스 로드·대화 열 때
+  //   터지는 queryCustomerInfo 응답을 놓치지 않게). ALIBABA_PROBE 일 때만 끝에서 파일로 덤프한다.
+  //   ★캡처는 항상 켜 두되(부작용 없음 — 읽기만), 덤프/매핑은 안 한다. 라이브 키 확정용 진단.
+  const capturedCustomerInfo = captureCustomerInfoResponses(page);
 
   // ★goto 전에 login이 백업한 세션 쿠키를 주입한다(프로필만으론 세션 쿠키가 사라져 로그인 페이지로 튐).
   const injected = await injectSessionCookies(context, cookiesFile);
@@ -318,6 +536,26 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     .evaluate(`document.querySelectorAll(".im-next-overlay-wrapper").forEach((el) => el.remove())`)
     .catch(() => undefined);
 
+  // 🔎 등급 프로브(ALIBABA_PROBE 일 때만): 목록 첫 행들의 React 데이터를 파일로 덤프한다. 등급 필드명을
+  //    라이브에서 한 번 확인하기 위한 1회성 진단(읽기 전용). ALIBABA_PROBE=only 면 프로브만 하고 끝낸다.
+  if (process.env.ALIBABA_PROBE) {
+    try {
+      const probe = await page.evaluate(PROBE_CALL).catch(() => null);
+      const probePath = dataFile("alibaba-grade-probe.json");
+      await mkdir(dirname(probePath), { recursive: true });
+      await writeFile(probePath, JSON.stringify(probe, null, 2), "utf8");
+      console.log(`🔎 등급 프로브 저장됨: ${probePath}`);
+      console.log("   이 파일을 그대로 두면(또는 공유하면) 등급이 어느 필드인지 찾아 매핑을 완성합니다.");
+    } catch (error) {
+      console.log("등급 프로브 실패(무시하고 진행):", error);
+    }
+    if (process.env.ALIBABA_PROBE === "only") {
+      await browser.close();
+      chrome.kill("SIGTERM");
+      return [];
+    }
+  }
+
   const conversations: AlibabaRawConversation[] = [];
   const seenCodes = new Set<string>(); // 이미 push한 conversationCode
   const seenCids = new Set<string>(); // 이미 열어본 연락처 행(data-cid) — 재시도 방지
@@ -350,10 +588,18 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     }
     seenCids.add(cid); // 행이 있어 처리 시도 → 마크(빈 대화여도 같은 행 무한 재시도 방지).
 
-    const profileImageUrl = (await page.evaluate(buildReadRowProfileImageScript(cid, 0)).catch(() => undefined)) as
-      | string
+    // 행에서 아바타 + 등급 뱃지 URL을 함께 읽는다(예전엔 아바타만 읽고 뱃지는 버렸다).
+    const rowImages = (await page.evaluate(buildReadRowProfileImageScript(cid, 0)).catch(() => undefined)) as
+      | { avatarUrl?: string; gradeBadgeUrl?: string; userNewLevel?: string; userNewLevelIcon?: string; memberId?: string }
       | undefined;
+    const profileImageUrl = rowImages?.avatarUrl;
+    const gradeBadgeUrl = rowImages?.gradeBadgeUrl;
+    const userNewLevel = rowImages?.userNewLevel;
+    const userNewLevelIcon = rowImages?.userNewLevelIcon;
+    const memberId = rowImages?.memberId;
 
+    // 이 대화를 여는 동안 도착할 고객정보(queryCustomerInfo) 응답만 보려고 현재 캡처 길이를 스냅샷.
+    const ciStart = capturedCustomerInfo.length;
     await rowLoc.click({ timeout: 5000 }).catch(() => undefined);
     const first = await waitForConversation(cid);
     if (!first || !first.messages.length) {
@@ -392,13 +638,38 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     }
 
     const messages = [...byId.values()].sort((a, b) => (a.sendTime ?? 0) - (b.sendTime ?? 0));
+
+    // 고객 활동(#7): 이 대화를 여는 동안 캡처된 queryCustomerInfo 응답에서 활동 지표를 뽑는다.
+    //   연결 키가 없어(URL buyerAccountId ↔ 우리 memberId 형식 불일치) '열린 순서 윈도우'로 잡되,
+    //   등급(growthLevel)이 행 fiber userNewLevel과 일치할 때만 채택해 오귀속을 막는다(모호하면 생략 = 빈 채로 둠).
+    let activity: AlibabaBuyerActivity | undefined;
+    const freshCi = capturedCustomerInfo
+      .slice(ciStart)
+      .map(readBuyerInfo)
+      .filter((x): x is { buyerInfo: Record<string, unknown>; grade?: string } => Boolean(x));
+    if (freshCi.length) {
+      const want = (userNewLevel || first.contact.userNewLevel || "").trim().toUpperCase();
+      const gradeMatch = want ? freshCi.find((f) => (f.grade ?? "").trim().toUpperCase() === want) : undefined;
+      // 등급 일치 우선 → 없으면 이 창에서 캡처가 '딱 하나'일 때만(모호하지 않을 때) 채택.
+      const chosen = gradeMatch ?? (freshCi.length === 1 ? freshCi[0] : undefined);
+      if (chosen) activity = buyerInfoToActivity(chosen.buyerInfo);
+    }
+
     conversations.push({
       owner: first.owner,
       contact: {
         ...first.contact,
         name: first.contact.name || dataName || undefined,
         aliId: first.contact.aliId || dataAliId || undefined,
-        profileImageUrl: first.contact.profileImageUrl || profileImageUrl
+        profileImageUrl: first.contact.profileImageUrl || profileImageUrl,
+        // 구매 등급을 행 fiber에서 직접 읽은 값으로 동봉(행 fiber 우선, 메시지 fiber 폴백). 해석은 normalize.normalizeAlibabaGrade.
+        userNewLevel: userNewLevel || first.contact.userNewLevel,
+        userNewLevelIcon: userNewLevelIcon || first.contact.userNewLevelIcon,
+        memberId: memberId || first.contact.memberId,
+        // 등급 뱃지 URL(폴백 보존). 등급 값은 userNewLevel 우선.
+        alibabaGradeBadgeUrl: userNewLevelIcon || first.contact.alibabaGradeBadgeUrl || gradeBadgeUrl,
+        // 고객 활동(queryCustomerInfo) — 위에서 등급 일치로 검증해 채택(없으면 기존값/빈 채).
+        activity: activity ?? first.contact.activity
       },
       messages
     });
@@ -439,6 +710,38 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     emptyStreak = openedThisRound === 0 ? emptyStreak + 1 : 0;
     // 목록이 맨 아래(또는 스크롤 불가) + 2라운드 연속 새 대화 없음 → 끝.
     if ((!listScroll || !listScroll.found || listScroll.atBottom) && emptyStreak >= 2) break;
+  }
+
+  // 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 덤프(ALIBABA_PROBE 일 때만): 대화들을 다 열어 본 뒤
+  //   (그동안 queryCustomerInfo 응답이 쌓였다) 캡처한 원문을 파일로 떨군다. ★고객 활동(#7) 키는
+  //   확정·배선됨(buyerInfoToActivity). 이 덤프는 남은 키(주문 카드수 등) 진단용으로만 유지한다.
+  if (process.env.ALIBABA_PROBE) {
+    try {
+      const dumpPath = dataFile("alibaba-customer-info-probe.json");
+      await mkdir(dirname(dumpPath), { recursive: true });
+      await writeFile(
+        dumpPath,
+        JSON.stringify(
+          {
+            note: "queryCustomerInfo JSONP 원문 캡처. 고객 활동(#7)은 buyerInfo→AlibabaBuyerActivity 로 확정·배선됨(extract-session.buyerInfoToActivity). 이 덤프는 남은 키(주문 카드수 등) 진단용.",
+            urlMatch: CUSTOMER_INFO_URL_RE.source,
+            capturedCount: capturedCustomerInfo.length,
+            responses: capturedCustomerInfo
+          },
+          null,
+          2
+        ),
+        "utf8"
+      );
+      console.log(`🔎 고객정보/활동 JSONP 캡처 저장됨(${capturedCustomerInfo.length}건): ${dumpPath}`);
+      if (capturedCustomerInfo.length === 0) {
+        console.log(
+          "   ⚠️ 0건 캡처 — URL 매칭(queryCustomerInfo 류)이 안 맞거나, '고객 활동' 패널을 열어야 응답이 터질 수 있어요. 라이브에서 엔드포인트명을 확인하세요."
+        );
+      }
+    } catch (error) {
+      console.log("고객정보/활동 JSONP 덤프 실패(무시하고 진행):", error);
+    }
   }
 
   await browser.close();

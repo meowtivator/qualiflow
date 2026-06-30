@@ -1,4 +1,5 @@
 import { ConversationPanel } from "./conversation-panel";
+import { InboxSidebar } from "./inbox-sidebar";
 import { LeadContextPanel } from "./lead-context-panel";
 import { ThreadList } from "./thread-list";
 import type { MessengerWorkspaceProps } from "./types";
@@ -13,7 +14,10 @@ export function MessengerWorkspace({
   selectedChannel,
   selectedQualification,
   selectedLeadChannels,
-  messages
+  messages,
+  filterOptions,
+  activeFilter,
+  navCollapsed
 }: MessengerWorkspaceProps) {
   return (
     <>
@@ -32,8 +36,19 @@ export function MessengerWorkspace({
         </div>
       </section>
 
-      <section className="messenger-layout" aria-label="Messenger workspace">
-        <ThreadList selectedThreadId={selectedThreadId} threads={threads} />
+      <section className={`messenger-layout ${navCollapsed ? "nav-collapsed" : ""}`} aria-label="Messenger workspace">
+        <InboxSidebar
+          activeFilter={activeFilter}
+          collapsed={navCollapsed}
+          options={filterOptions}
+          selectedThreadId={selectedThreadId}
+        />
+        <ThreadList
+          activeFilter={activeFilter}
+          navCollapsed={navCollapsed}
+          selectedThreadId={selectedThreadId}
+          threads={threads}
+        />
         <ConversationPanel
           channel={selectedChannel}
           lead={selectedLead}
