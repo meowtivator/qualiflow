@@ -7,9 +7,12 @@
 //   - syncFullHistory + 히스토리가 잠잠해질 때까지(debounce) 기다렸다가 ChatRawConversation[]로
 //     정규화해 outputFile 에 쓴다.
 
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
 import type { MessageAttachment } from "@qualiflow/core";
@@ -141,19 +144,52 @@ async function buildWhatsAppAttachment(
   }
 }
 
-// 이름 우선순위: 저장된 연락처(이름/notify/인증명) → 채팅방 이름 → 상대가 설정한 pushName → jid 번호.
-// ★@lid(WhatsApp의 새 프라이버시 식별자)는 전화번호 jid가 아니라 연락처 맵 조회가 빗나가므로,
-//   상대 메시지에 실려오는 pushName이 사실상 가장 쓸모 있는 이름이 된다.
+// ISO 국가코드(예: "KR") → 국기 이모지(🇰🇷). 알파벳 2글자를 regional-indicator 코드포인트로 변환.
+function countryFlag(iso2: string): string {
+  if (iso2.length !== 2) return "";
+  return iso2
+    .toUpperCase()
+    .replace(/[A-Z]/g, (c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+// @lid jid 를 전화번호로 풀고 국제표기+국기로 포맷한다(예: "+82 10 5874 5767 🇰🇷").
+// Baileys 가 페어링 때 .auth/<세션>/lid-mapping-<lid>_reverse.json 에 lid→전화번호를 로컬 저장해 둔 걸 읽는다.
+// (이 파일들은 세션 디렉터리 안에만 있고 서버로 가지 않는다 — 보안 경계 유지.)
+function resolveLidPhone(jid: string, authDir: string): string | undefined {
+  const lidNum = jid.split("@")[0];
+  let digits: string;
+  try {
+    const raw = readFileSync(resolve(authDir, `lid-mapping-${lidNum}_reverse.json`), "utf8");
+    const parsed = JSON.parse(raw) as unknown; // 내용은 "821058745767" 같은 JSON 문자열(숫자만).
+    digits = typeof parsed === "string" ? parsed : String(parsed);
+  } catch {
+    return undefined; // 매핑 파일 없음 = 풀 수 없음.
+  }
+  if (!/^\d{6,15}$/.test(digits)) return undefined;
+  const phone = parsePhoneNumberFromString(`+${digits}`);
+  if (!phone) return `+${digits}`; // 파싱 실패해도 최소한 +숫자 로는 보여준다.
+  const flag = phone.country ? countryFlag(phone.country) : "";
+  return flag ? `${phone.formatInternational()} ${flag}` : phone.formatInternational();
+}
+
+// 이름 우선순위: 저장된 연락처(이름/notify/인증명) → 채팅방 이름 → 상대가 설정한 pushName.
+// ★진짜 이름이 하나도 없을 때: @lid(프라이버시 식별자) 스레드면 의미 없는 lid 숫자 대신 전화번호로 보여준다.
+//   (@lid 는 연락처 맵 키와 어긋나 이름 조회가 빗나가므로 실데이터에선 거의 전부 이 분기로 떨어진다.)
 function displayName(
   jid: string,
   contacts: Map<string, Contact>,
   chats: Map<string, Chat>,
+  authDir: string,
   pushName?: string
 ): string {
   const contact = contacts.get(jid);
-  return (
-    contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? pushName ?? jid.split("@")[0]
-  );
+  const named = contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? pushName;
+  if (named) return named;
+  if (jid.endsWith("@lid")) {
+    const phone = resolveLidPhone(jid, authDir);
+    if (phone) return phone;
+  }
+  return jid.split("@")[0];
 }
 
 // 이미 저장된 대화를 읽는다(왓츠앱은 페어링 직후 1회만 히스토리를 주므로, 재연결 fetch가 0개일 때
@@ -246,7 +282,7 @@ export async function fetchWhatsApp(
         const pushName = list.find((message) => !message.key?.fromMe && message.pushName)?.pushName ?? undefined;
         conversations.push({
           threadId: jid,
-          contact: { id: jid, name: displayName(jid, contacts, chats, pushName) },
+          contact: { id: jid, name: displayName(jid, contacts, chats, authDir, pushName) },
           messages
         });
       }
