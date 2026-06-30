@@ -18,6 +18,7 @@ import { pair } from "./pair";
 import { pushAllAccounts } from "./push";
 import { serve, watch } from "./serve";
 import { loadToken } from "./token-store";
+import { startWizard } from "./web/server";
 
 async function main() {
   loadLocalEnv(); // apps/web/.env.local 의 TELEGRAM_* 등을 읽어 process.env에 넣는다.
@@ -234,6 +235,13 @@ async function main() {
         console.error("사용법: wa-web <pair|names> [label]");
         process.exitCode = 1;
       }
+      return;
+    }
+
+    case "setup": {
+      // 비개발자용 설치 마법사 — 로컬 웹 UI 를 띄우고 브라우저를 연다. 터미널 없이 클릭으로
+      // 계정 페어링 + 채널 연결. 서버는 마법사를 마칠 때까지(또는 Ctrl+C) 떠 있는다.
+      await startWizard();
       return;
     }
 
