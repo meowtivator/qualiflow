@@ -340,6 +340,10 @@ export async function fetchWhatsApp(
         for (const contact of contactList) {
           if (contact.id) {
             contacts.set(contact.id, contact);
+            // ★@lid(프라이버시 식별자) 스레드는 전화번호 jid 로 색인된 연락처와 키가 달라 이름 조회가
+            //   빗나간다. 연락처가 lid 를 들고 있으면 그 키로도 색인해 @lid 스레드에서 이름을 찾게 한다.
+            const lid = (contact as { lid?: unknown }).lid;
+            if (typeof lid === "string" && lid) contacts.set(lid, contact);
           }
         }
         for (const message of messages) {
