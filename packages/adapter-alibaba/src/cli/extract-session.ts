@@ -79,16 +79,43 @@ function captureCustomerInfoResponses(page: Page, maxBodyChars = 20_000): Captur
 }
 
 // queryCustomerInfo JSONP 한 건에서 buyerInfo와 등급(growthLevel/highQualityLevelTag)을 꺼낸다(없으면 undefined).
+// ★companyName/firstName/lastName 도 함께 꺼낸다(프로브 확정, alibaba-customer-info-probe.json):
+//   이 응답의 companyName 은 '회사명', firstName+lastName 은 '개인명'으로 분리돼 온다. 메시지 fiber의
+//   contact.companyName 은 대부분 개인명과 같은 값이라(중복), 여기 회사명을 '진짜 회사명'의 주 출처로 쓴다.
 function readBuyerInfo(
   entry: CapturedJsonpResponse
-): { buyerInfo: Record<string, unknown>; grade?: string } | undefined {
+): { buyerInfo: Record<string, unknown>; grade?: string; companyName?: string; personName?: string } | undefined {
   const root = entry.parsed as { data?: { data?: { buyerInfo?: Record<string, unknown> } } } | undefined;
   const buyerInfo = root?.data?.data?.buyerInfo;
   if (!buyerInfo || typeof buyerInfo !== "object") return undefined;
   const growth = (buyerInfo.growthLevelInfo as { growthLevel?: unknown } | undefined)?.growthLevel;
   const hq = buyerInfo.highQualityLevelTag;
   const grade = typeof growth === "string" ? growth : typeof hq === "string" ? hq : undefined;
-  return { buyerInfo, grade };
+  const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const companyName = str(buyerInfo.companyName);
+  const first = str(buyerInfo.firstName);
+  const last = str(buyerInfo.lastName);
+  const personName = [first, last].filter(Boolean).join(" ") || undefined;
+  return { buyerInfo, grade, companyName, personName };
+}
+
+// 회사명이 '진짜 회사'인지 판정해 정리한다(아니면 undefined = 회사명 없음).
+//   ★버리는 값(모두 프로브 실데이터에서 관찰됨): 자리표시자("NA"/"nocompany"/"Nocompanyname"/"no company"/
+//     "All companies"/"Pas d'entreprise"[프랑스어 '회사 없음']), 그리고 개인명과 사실상 같은 값.
+//   → 개인명과 같으면 회사가 아니라 '회사명을 안 채운 개인'이므로 회사명을 비운다(대시보드 중복 방지).
+//   절대 값을 지어내지 않는다 — 판단은 '버릴지 말지'만.
+// ★"pas\s*d\W*entreprise": 프랑스어 "회사 없음". 실데이터는 아포스트로피가 HTML 인코딩(d&#39;entreprise)돼
+//   올 수 있어 d와 entreprise 사이의 비단어 문자열(\W*)을 관대하게 허용한다(따옴표·공백·&#39; 모두 매치).
+const COMPANY_PLACEHOLDER_RE = /^(na|n\/a|none|no\s*company|nocompany|no\s*company\s*name|nocompanyname|all\s*companies|pas\s*d\W*entreprise)$/i;
+
+function cleanCompanyName(company: string | undefined, personName: string | undefined): string | undefined {
+  const trimmed = company?.trim();
+  if (!trimmed) return undefined;
+  if (COMPANY_PLACEHOLDER_RE.test(trimmed)) return undefined; // 자리표시자 → 회사명 없음
+  // 개인명과 대소문자·공백 무시하고 같으면 '회사명 미기입' → 비운다(중복 셀 방지).
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  if (personName && norm(trimmed) === norm(personName)) return undefined;
+  return trimmed;
 }
 
 // buyerInfo → AlibabaBuyerActivity. ★음수(-1=숨김)·null·비수치는 버린다(키를 지어내지 않는다).
@@ -643,23 +670,39 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     //   연결 키가 없어(URL buyerAccountId ↔ 우리 memberId 형식 불일치) '열린 순서 윈도우'로 잡되,
     //   등급(growthLevel)이 행 fiber userNewLevel과 일치할 때만 채택해 오귀속을 막는다(모호하면 생략 = 빈 채로 둠).
     let activity: AlibabaBuyerActivity | undefined;
+    let ciCompanyName: string | undefined; // queryCustomerInfo의 '진짜 회사명'(개인명·자리표시자 정리 후)
+    let ciPersonName: string | undefined; // queryCustomerInfo의 '개인명'(firstName+lastName)
     const freshCi = capturedCustomerInfo
       .slice(ciStart)
       .map(readBuyerInfo)
-      .filter((x): x is { buyerInfo: Record<string, unknown>; grade?: string } => Boolean(x));
+      .filter(
+        (x): x is { buyerInfo: Record<string, unknown>; grade?: string; companyName?: string; personName?: string } =>
+          Boolean(x)
+      );
     if (freshCi.length) {
       const want = (userNewLevel || first.contact.userNewLevel || "").trim().toUpperCase();
       const gradeMatch = want ? freshCi.find((f) => (f.grade ?? "").trim().toUpperCase() === want) : undefined;
       // 등급 일치 우선 → 없으면 이 창에서 캡처가 '딱 하나'일 때만(모호하지 않을 때) 채택.
       const chosen = gradeMatch ?? (freshCi.length === 1 ? freshCi[0] : undefined);
-      if (chosen) activity = buyerInfoToActivity(chosen.buyerInfo);
+      if (chosen) {
+        activity = buyerInfoToActivity(chosen.buyerInfo);
+        // 개인명(firstName+lastName)은 회사명 정리의 기준으로도 쓴다(회사명==개인명이면 회사명을 비운다).
+        ciPersonName = chosen.personName;
+        ciCompanyName = cleanCompanyName(chosen.companyName, chosen.personName);
+      }
     }
+
+    // 회사명 최종 결정: queryCustomerInfo의 '진짜 회사명'을 최우선, 없으면 메시지 fiber companyName을
+    //   개인명 기준으로 정리해 폴백(그마저 개인명과 같으면 undefined = 회사명 없음).
+    const resolvedName = first.contact.name || dataName || ciPersonName || undefined;
+    const resolvedCompanyName = ciCompanyName ?? cleanCompanyName(first.contact.companyName, resolvedName);
 
     conversations.push({
       owner: first.owner,
       contact: {
         ...first.contact,
-        name: first.contact.name || dataName || undefined,
+        name: resolvedName,
+        companyName: resolvedCompanyName,
         aliId: first.contact.aliId || dataAliId || undefined,
         profileImageUrl: first.contact.profileImageUrl || profileImageUrl,
         // 구매 등급을 행 fiber에서 직접 읽은 값으로 동봉(행 fiber 우선, 메시지 fiber 폴백). 해석은 normalize.normalizeAlibabaGrade.
