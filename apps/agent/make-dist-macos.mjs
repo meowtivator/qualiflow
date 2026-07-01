@@ -1,6 +1,6 @@
 // macOS 배포본 생성 — dist/package(런타임) + 더블클릭 설치/제거 스크립트 + 안내를 한 폴더로 묶는다.
 // 결과: apps/agent/dist/macos-dist/  (이 폴더를 zip해서 배포 → 받는 사람이 install.command 우클릭→열기)
-//   설치: Application Support로 복사 + launchd 등록(run.sh daemon) + macOS 격리 속성 해제(서명 우회).
+//   설치: Application Support로 복사 + launchd 등록(watch/serve/wizard 상주) + macOS 격리 속성 해제(서명 우회).
 
 import { execSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -12,6 +12,7 @@ const distRoot = resolve(here, "dist/macos-dist");
 const pkgSrc = resolve(here, "dist/package");
 const LABEL = "com.qualiflow.agent"; // watch(실시간 fetch→push) 상주
 const SERVE_LABEL = "com.qualiflow.serve"; // serve(발송 명령 처리) 상주
+const WIZARD_LABEL = "com.qualiflow.wizard"; // wizard(로컬 설정 UI) 상주 — 웹 "채널 추가"가 여는 localhost:4317
 const APP_NAME = "QualiFlow";
 
 console.log("① 런타임 패키지 빌드...");
@@ -31,8 +32,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 DEST="$HOME/Library/Application Support/${APP_NAME}"
 PLIST_WATCH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 PLIST_SERVE="$HOME/Library/LaunchAgents/${SERVE_LABEL}.plist"
+PLIST_WIZARD="$HOME/Library/LaunchAgents/${WIZARD_LABEL}.plist"
 LOG="$HOME/Library/Logs/qualiflow-agent.log"
 SERVE_LOG="$HOME/Library/Logs/qualiflow-serve.log"
+WIZARD_LOG="$HOME/Library/Logs/qualiflow-wizard.log"
 
 echo "QualiFlow 에이전트를 설치합니다..."
 mkdir -p "$DEST" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
@@ -78,21 +81,42 @@ cat > "$PLIST_SERVE" <<PLISTEOF
 </plist>
 PLISTEOF
 
+# 상주 3) wizard — 설정 UI(계정 페어링 + 채널 추가)를 localhost:4317 에 '항상' 띄운다.
+#   대표가 CRM 웹의 "채널 추가" 버튼을 누르면 이 로컬 마법사가 열린다(브라우저는 여기서 안 염).
+cat > "$PLIST_WIZARD" <<PLISTEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${WIZARD_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array><string>$DEST/run.sh</string><string>wizard</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$WIZARD_LOG</string>
+  <key>StandardErrorPath</key><string>$WIZARD_LOG</string>
+</dict>
+</plist>
+PLISTEOF
+
 launchctl unload "$PLIST_WATCH" 2>/dev/null || true
 launchctl unload "$PLIST_SERVE" 2>/dev/null || true
+launchctl unload "$PLIST_WIZARD" 2>/dev/null || true
 launchctl load "$PLIST_WATCH"
 launchctl load "$PLIST_SERVE"
+launchctl load "$PLIST_WIZARD"
 
 echo ""
-echo "✅ 설치 완료 — 백그라운드 동기화·발송이 켜졌습니다(로그인 시 자동 시작)."
+echo "✅ 설치 완료 — 백그라운드 동기화·발송·설정 UI가 켜졌습니다(로그인 시 자동 시작)."
 echo "   설치 위치: $DEST"
 echo "   데이터:    $HOME/.qualiflow   (로그인 세션은 이 컴퓨터에만)"
 echo ""
 echo "이제 설정 마법사를 엽니다 — 브라우저에서 '코드 붙여넣기(페어링) + 채널 로그인'만 하면 끝입니다."
-echo "(이 창을 닫아도 백그라운드 동기화는 계속됩니다.)"
+echo "(이 창을 닫아도 백그라운드 동기화는 계속됩니다. 나중엔 CRM 웹의 '채널 추가' 버튼으로도 열려요.)"
 echo ""
-# 설정 마법사(브라우저 자동 오픈): 클라우드 페어링 + 채널 연결을 클릭으로. 창을 닫으면 마법사만 종료.
-exec "$DEST/run.sh" setup
+# 상주 마법사가 4317 을 잡을 시간을 잠깐 준 뒤, 브라우저를 그 로컬 마법사로 연다.
+sleep 2
+open "http://127.0.0.1:4317" 2>/dev/null || true
 `
 );
 
@@ -103,9 +127,11 @@ writeFileSync(
 set -e
 PLIST_WATCH="$HOME/Library/LaunchAgents/${LABEL}.plist"
 PLIST_SERVE="$HOME/Library/LaunchAgents/${SERVE_LABEL}.plist"
+PLIST_WIZARD="$HOME/Library/LaunchAgents/${WIZARD_LABEL}.plist"
 launchctl unload "$PLIST_WATCH" 2>/dev/null || true
 launchctl unload "$PLIST_SERVE" 2>/dev/null || true
-rm -f "$PLIST_WATCH" "$PLIST_SERVE"
+launchctl unload "$PLIST_WIZARD" 2>/dev/null || true
+rm -f "$PLIST_WATCH" "$PLIST_SERVE" "$PLIST_WIZARD"
 rm -rf "$HOME/Library/Application Support/${APP_NAME}"
 echo "🗑 제거 완료. (로그인 세션 ~/.qualiflow 는 남겨둡니다 — 지우려면 직접 삭제)"
 echo "이 창은 닫아도 됩니다."
@@ -123,6 +149,8 @@ writeFileSync(
      ① 대시보드(crm.thedozers.com)의 "연결 소스 → 코드 발급"에서 코드를 받아 붙여넣기 → 페어링
      ② 연결할 채널 버튼을 눌러 로그인(알리바바=로그인창 / WhatsApp=QR / 텔레그램=전화코드)
 4) 끝. 이후로는 백그라운드에서 자동으로 실시간 동기화 + 발송이 됩니다(로그인 시 자동 시작).
+   ★ 나중에 채널을 더 추가할 때는, 브라우저를 켤 필요 없이 CRM 웹의 "연결 소스 → 채널 추가"
+     버튼을 누르면 이 설정 마법사가 다시 열립니다(로컬에 항상 떠 있음).
    제거: uninstall.command 우클릭 → 열기.
 
 * 이 에이전트는 당신 맥에서만 돌고, 로그인 세션은 ~/.qualiflow 에 로컬 저장됩니다(서버로 안 감).
