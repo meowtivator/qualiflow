@@ -30,6 +30,19 @@ const DEFAULT_THREAD_PRIORITY = "normal";
 
 // ────────────────────────────────────────────────────────────────────────
 
+// 회사명이 '개인명과 사실상 같은 값'이면 회사명으로 취급하지 않는다(빈 값 반환).
+//   ★배경: 알리바바 메시지 fiber의 contact.companyName 은 바이어가 회사명을 안 적으면 개인명과 같은
+//     값으로 온다(예: name="A M", companyName="A M"). 그대로 흘리면 대시보드 셀이 "A M / A M"로 중복된다.
+//   추출기(extract-session)가 queryCustomerInfo로 이미 정리하지만, 이 함수는 '캡처 실패/구데이터'에도
+//     같은 중복을 막는 최종 안전망이다. 대소문자·공백만 무시하고 동일하면 회사명을 비운다.
+function dropCompanyIfSameAsName(company: string | undefined, name: string | undefined): string | undefined {
+  const trimmed = company?.trim();
+  if (!trimmed) return undefined;
+  if (!name) return trimmed;
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  return norm(trimmed) === norm(name) ? undefined : trimmed;
+}
+
 // 아무 문자열이나 안정적인 내부 id로 바꾼다. (영문/숫자만 남기고 소문자화)
 function toEntityId(prefix: string, value: string): string {
   const normalized = value
@@ -94,10 +107,12 @@ export function normalizeAlibabaContact(raw: AlibabaRawConversation): Lead {
   const createdAt = sendTimes.length ? toIso(Math.min(...sendTimes)) : toIso(0);
   const updatedAt = sendTimes.length ? toIso(Math.max(...sendTimes)) : createdAt;
 
+  const displayName = contact.name ?? contact.loginId ?? "Unknown Alibaba buyer";
   return {
     id: toEntityId("lead_alibaba", contact.aliId ?? contact.loginId ?? "unknown"),
-    displayName: contact.name ?? contact.loginId ?? "Unknown Alibaba buyer",
-    companyName: contact.companyName || undefined,
+    displayName,
+    // 회사명이 개인명과 같으면(중복) 비운다 — 안전망. 추출기가 이미 정리하지만 구데이터도 방어.
+    companyName: dropCompanyIfSameAsName(contact.companyName, contact.name),
     countryCode: contact.complianceCountryCode || undefined,
     profileImageUrl: contact.profileImageUrl || undefined,
     sourceChannelIds: [CHANNEL_ID],
@@ -315,7 +330,11 @@ export function alibabaToIngestConversations(raw: AlibabaRawConversation[]): Ali
         name: conversation.contact.name ?? conversation.contact.loginId,
         handle: conversation.contact.loginId,
         // 강화 필드(있을 때만 — 알리바바 raw에 존재). 서버 ingest가 leads.company_name/country_code/profile_image_url에 채운다.
-        companyName: conversation.contact.companyName || undefined,
+        // ★회사명이 개인명과 같으면(중복) 비운다 — 대시보드 "이름 / 회사" 중복 셀 방지(안전망).
+        companyName: dropCompanyIfSameAsName(
+          conversation.contact.companyName,
+          conversation.contact.name ?? conversation.contact.loginId
+        ),
         countryCode: conversation.contact.complianceCountryCode || undefined,
         // ★등급/인증 뱃지(imgextra ...tps-WxH.png) 제외 — 아바타가 아니라 공용 아이콘. 없으면 undefined(이니셜 폴백).
         profileImageUrl:
