@@ -6,7 +6,7 @@
 // ⚠️ 맥은 토큰을 argv(-w)로 넘겨 ps에 잠깐 노출될 수 있다(단일 사용자 로컬 MVP 한정).
 
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -52,10 +52,3 @@ export async function loadToken(): Promise<string | null> {
   }
 }
 
-export async function clearToken(): Promise<void> {
-  if (isMac) {
-    await run("security", ["delete-generic-password", "-s", SERVICE, "-a", ACCOUNT]).catch(() => undefined);
-    return;
-  }
-  await rm(tokenFilePath(), { force: true }).catch(() => undefined);
-}

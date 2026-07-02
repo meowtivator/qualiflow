@@ -4,6 +4,7 @@
 //   POST /api/agents/commands           — 결과 보고: { commandId, status: 'done'|'failed', result }
 // 보안: Bearer 토큰 → hmacHash → SDF가 토큰으로 workspace 도출(스푸핑 차단). middleware PUBLIC_PATHS 등록.
 
+import { setTimeout as sleep } from "node:timers/promises";
 import { NextResponse } from "next/server";
 
 import { agentTokenErrorResponse, bearerToken } from "@/lib/agents/agent-request";
@@ -12,10 +13,6 @@ import { createClient } from "@/lib/supabase/server";
 
 const LONG_POLL_MS = 25_000;
 const POLL_INTERVAL_MS = 2_000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export async function GET(request: Request) {
   if (!isPairingConfigured()) {

@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { addAccount, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
 import { CLOUD_BASE_URL } from "../config";
 import { loginInstagram } from "../connectors/instagram";
-import { loginAlibaba } from "../fetch";
+import { loginAlibaba } from "@qualiflow/adapter-alibaba/runtime";
 import { pair } from "../pair";
 import { loadToken } from "../token-store";
 import { WIZARD_HTML } from "./wizard-html";

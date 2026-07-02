@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import type { AlibabaDiscoveryCandidate, AlibabaDiscoveryTarget, AlibabaInboundBuyer } from "./index.js";
 import { buildAlibabaDiscoveryCandidates } from "./index.js";
 import type { AlibabaContactMetadata } from "./normalize.js";
@@ -109,14 +110,6 @@ async function collectAnchorLinks(page: import("playwright-core").Page): Promise
       }))
       .filter((link) => link.href)
   );
-}
-
-async function delay(ms: number) {
-  if (ms <= 0) {
-    return;
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function runAlibabaHeadlessDiscovery(

@@ -10,7 +10,6 @@ import {
   discoverBuyerSns,
   extractAlibaba,
   findChrome,
-  loginAlibaba as runLoginAlibaba,
   sendAlibaba as runSendAlibaba
 } from "@qualiflow/adapter-alibaba/runtime";
 import { createChatAdapter, type ChatRawConversation } from "@qualiflow/adapter-chat";
@@ -76,11 +75,6 @@ async function summarize(
   }
 
   return { channel, label, conversationCount, leadCount: leads.length, threadCount: threads.length, messageCount, sample };
-}
-
-// 알리바바 로그인을 계정별 프로필로 실행한다(add 시 사용). runtime 함수에 위임(서브프로세스 아님).
-export function loginAlibaba(profile: string): Promise<void> {
-  return runLoginAlibaba(profile);
 }
 
 // ────────────────────────────────────────────────────────────────────────

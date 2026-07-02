@@ -9,7 +9,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(here, "../../..");
+// 레포 루트 — env.ts/media.ts도 같은 규칙을 쓰므로 여기서 한 번만 계산해 export.
+export const REPO_ROOT = resolve(here, "../../..");
 // 배포본은 QUALIFLOW_HOME(예: ~/.qualiflow)에 세션·데이터를 둔다. 개발에선 레포 기준(하위호환).
 const HOME = process.env.QUALIFLOW_HOME;
 const AUTH_ROOT = HOME ? resolve(HOME, ".auth") : resolve(REPO_ROOT, ".auth");

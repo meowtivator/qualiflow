@@ -27,7 +27,7 @@ const CONNECTOR_STATUSES = new Set<ConnectorStatus>(["disconnected", "active", "
 const SYNC_DATA_FILES_BY_CHANNEL: Record<string, string[]> = {
   alibaba: ["alibaba-conversations.json"],
   instagram: ["instagram-conversations.json"],
-  telegram: ["telegram-conversations.json", "telegram-dialogs.json"],
+  telegram: ["telegram-conversations.json"],
   whatsapp: ["whatsapp-conversations.json"]
 };
 

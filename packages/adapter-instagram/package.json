@@ -3,25 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Instagram user/professional-account conversation adapter for QualiFlow.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "import": "./src/index.ts"
-    }
-  },
-  "files": ["dist", "README.md"],
+  "description": "Instagram login-session CLI for QualiFlow (apps/web connectors launch가 경로로 spawn). 어댑터 본체는 adapter-chat으로 흡수됨.",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
     "inbox:login": "tsx ./src/cli/login-session.ts",
-    "normalize:check": "tsx ./src/normalize.check.ts",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@qualiflow/adapter-chat": "workspace:*",
-    "@qualiflow/core": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "25.9.1",

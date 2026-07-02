@@ -14,23 +14,19 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 
+import { ESBUILD_OPTIONS, EXTERNALS } from "./build.mjs";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const out = resolve(here, "dist/package");
-const EXTERNALS = ["playwright-core", "@whiskeysockets/baileys"];
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-// 1. 번들
+// 1. 번들 — 옵션은 build.mjs(단일 출처)와 동일, 진입/출력 경로만 배포용 절대경로로.
 await build({
+  ...ESBUILD_OPTIONS,
   entryPoints: [resolve(here, "src/cli.ts")],
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node20",
   outfile: resolve(out, "agent.mjs"),
-  external: EXTERNALS,
-  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
   logLevel: "warning"
 });
 console.log("① 번들 완료");

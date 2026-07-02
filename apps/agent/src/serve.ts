@@ -71,7 +71,7 @@ async function executeCommand(command: AgentCommand): Promise<void> {
 // ────────────────────────────────────────────────────────────────────────
 // watch — 실시간(주기) fetch 상주 모드.
 //   한 사이클 = 등록된 모든 계정을 라이브로 fetch → 그 결과를 클라우드로 push(인박스 최신화).
-//   기존 daemon(cli.ts)은 fetch만 하고 출력만 했지만, watch는 push까지 해서 웹 인박스가 따라온다.
+//   fetch만 하고 끝나지 않고 push까지 해서 웹 인박스가 따라온다(과거 daemon 명령을 흡수).
 //   ★멱등: push는 external_message_id 기준 멱등이라(같은 메시지 재전송 안전) 매 사이클 중복 ingest 무해.
 //   ★재시도/백오프: 한 사이클이 실패해도 죽지 않고, 연속 실패 시 대기를 지수적으로 늘려(상한 있음)
 //     서버/채널을 두드리지 않는다. 성공하면 백오프는 기본 간격으로 리셋.
@@ -89,7 +89,7 @@ function watchIntervalMs(): number {
   if (Number.isFinite(shared) && shared > 0) {
     return shared;
   }
-  return 5 * 60_000; // 기본 5분 — daemon(30분)보다 촘촘한 '실시간' 기본값.
+  return 5 * 60_000; // 기본 5분 — 촘촘한 "실시간" 기본값.
 }
 
 function watchMaxBackoffMs(): number {
