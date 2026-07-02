@@ -2,7 +2,7 @@
 # QualiFlow 로컬 에이전트 — macOS 백그라운드 자동실행(launchd LaunchAgent) 설치.
 #
 # 무엇을 하나: 로그인 시 자동 시작 + 항상 켜져 있는(KeepAlive) 백그라운드 데몬으로 등록한다.
-# 데몬은 'cli.ts daemon'을 실행 = 주기적으로 전체 계정을 off-screen 동기화(창 안 뜸).
+# 상주는 'cli.ts watch'를 실행 = 주기적 off-screen fetch + (페어링 시) 클라우드 push.
 # ★이건 "내 맥에서 도는 dev 설치"다. 남에게 나눠줄 서명 우회 설치본(.dmg/.app)은 다음 단계.
 #
 # 사용: bash apps/agent/packaging/macos/install.sh
@@ -41,7 +41,7 @@ cat > "$PLIST" <<PLISTEOF
     <string>exec</string>
     <string>tsx</string>
     <string>src/cli.ts</string>
-    <string>daemon</string>
+    <string>watch</string>
   </array>
   <key>WorkingDirectory</key><string>${REPO_ROOT}</string>
   <key>EnvironmentVariables</key>

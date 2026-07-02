@@ -110,6 +110,42 @@ async function loadRuntimeStatus(): Promise<RuntimeStatus> {
   }
 }
 
+// 세 뷰(연동/에이전트/메신저)가 같은 topbar를 복붙하지 않게 하나로 모은 헤더.
+// extraPills: 메신저 뷰의 데이터소스 상태필처럼 runtime 필 앞에 끼울 추가 요소.
+function Topbar({
+  title,
+  caption,
+  runtimeStatus,
+  extraPills
+}: {
+  title: string;
+  caption: string;
+  runtimeStatus: RuntimeStatus;
+  extraPills?: React.ReactNode;
+}) {
+  return (
+    <header className="topbar">
+      <div>
+        <h1 className="page-title">{title}</h1>
+        <p className="caption">{caption}</p>
+      </div>
+      <div className="status-group">
+        <ThemeToggle />
+        {extraPills}
+        <span className={`status-pill ${runtimeStatus.tone}`}>
+          {runtimeStatus.label}
+          {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
+        </span>
+        {runtimeStatus.showSignOut ? (
+          <a className="status-link" href="/auth/sign-out">
+            로그아웃
+          </a>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
 function AppSidebar({ currentView }: { currentView: "connectors" | "messenger" | "agents" }) {
   return (
     <aside className="sidebar">
@@ -158,24 +194,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <AppSidebar currentView="connectors" />
 
         <main className="main scroll-main">
-          <header className="topbar">
-            <div>
-              <h1 className="page-title">연동 설정</h1>
-              <p className="caption">채널 계정 연결을 시작하고, runtime과 adapter 책임을 분리해 관리합니다.</p>
-            </div>
-            <div className="status-group">
-              <ThemeToggle />
-              <span className={`status-pill ${runtimeStatus.tone}`}>
-                {runtimeStatus.label}
-                {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
-              </span>
-              {runtimeStatus.showSignOut ? (
-                <a className="status-link" href="/auth/sign-out">
-                  로그아웃
-                </a>
-              ) : null}
-            </div>
-          </header>
+          <Topbar
+            title="연동 설정"
+            caption="채널 계정 연결을 시작하고, runtime과 adapter 책임을 분리해 관리합니다."
+            runtimeStatus={runtimeStatus}
+          />
 
           <ConnectorSettings />
         </main>
@@ -209,24 +232,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <AppSidebar currentView="agents" />
 
         <main className="main scroll-main">
-          <header className="topbar">
-            <div>
-              <h1 className="page-title">에이전트</h1>
-              <p className="caption">로컬 에이전트를 페어링하고, 연결되어 저장된 에이전트를 확인합니다.</p>
-            </div>
-            <div className="status-group">
-              <ThemeToggle />
-              <span className={`status-pill ${runtimeStatus.tone}`}>
-                {runtimeStatus.label}
-                {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
-              </span>
-              {runtimeStatus.showSignOut ? (
-                <a className="status-link" href="/auth/sign-out">
-                  로그아웃
-                </a>
-              ) : null}
-            </div>
-          </header>
+          <Topbar
+            title="에이전트"
+            caption="로컬 에이전트를 페어링하고, 연결되어 저장된 에이전트를 확인합니다."
+            runtimeStatus={runtimeStatus}
+          />
 
           <AgentConnector agents={agents} devMode={devMode} isAuthed={isAuthed} />
         </main>
@@ -294,28 +304,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     visibleThreads.find((thread) => thread.id === selectedThreadParam) ?? visibleThreads[0];
 
   const topbar = (
-    <header className="topbar">
-      <div>
-        <h1 className="page-title">메신저</h1>
-        <p className="caption">채널별 inbound 문의를 같은 형태로 모아 보고, A 바이어를 우선 관리합니다.</p>
-      </div>
-      <div className="status-group">
-        <ThemeToggle />
+    <Topbar
+      title="메신저"
+      caption="채널별 inbound 문의를 같은 형태로 모아 보고, A 바이어를 우선 관리합니다."
+      runtimeStatus={runtimeStatus}
+      extraPills={
         <span className={`status-pill ${source.status.tone}`}>
           {source.status.label}
           <small>{source.status.detail}</small>
         </span>
-        <span className={`status-pill ${runtimeStatus.tone}`}>
-          {runtimeStatus.label}
-          {runtimeStatus.detail ? <small>{runtimeStatus.detail}</small> : null}
-        </span>
-        {runtimeStatus.showSignOut ? (
-          <a className="status-link" href="/auth/sign-out">
-            로그아웃
-          </a>
-        ) : null}
-      </div>
-    </header>
+      }
+    />
   );
 
   // 데이터가 아예 없음 → 기존 빈 상태(사이드바도 보여줄 게 없음).

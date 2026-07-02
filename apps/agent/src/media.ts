@@ -8,20 +8,18 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import type { MessageAttachment, MessageAttachmentKind } from "@qualiflow/core";
 
+import { REPO_ROOT } from "./accounts";
 import { authedFetch } from "./api-client";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(here, "../../..");
 const HOME = process.env.QUALIFLOW_HOME;
 // 세션·데이터와 같은 규칙(accounts.ts): 배포본은 ~/.qualiflow, 개발은 레포.
 const MEDIA_ROOT = HOME ? resolve(HOME, ".media") : resolve(REPO_ROOT, "apps/web/.data/.media");
 const MAX_BYTES = 25 * 1024 * 1024; // 업로드 엔드포인트/버킷과 동일(25MB)
 
-export function kindFromMime(mime: string): MessageAttachmentKind {
+function kindFromMime(mime: string): MessageAttachmentKind {
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";

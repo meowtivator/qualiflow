@@ -13,7 +13,8 @@ import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
 import { pairWhatsAppWeb, scrapeWhatsAppWebNames } from "./connectors/whatsapp-web";
 import { loadLocalEnv } from "./env";
-import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, listChannelThreads, loginAlibaba, sendMessage } from "./fetch";
+import { loginAlibaba } from "@qualiflow/adapter-alibaba/runtime";
+import { fetchAllAccounts, fetchChannel, fetchWhatsAppInbox, listChannelThreads, sendMessage } from "./fetch";
 import { pair } from "./pair";
 import { pushAllAccounts } from "./push";
 import { serve, watch } from "./serve";
@@ -179,28 +180,6 @@ async function main() {
       return;
     }
 
-    case "daemon": {
-      // 백그라운드 상주 모드: 주기적으로 전체 계정을 동기화한다(off-screen이라 창 안 뜸).
-      // 이후 클라우드 연결이 붙으면 "명령 수신 + 데이터 push"로 확장될 자리.
-      const intervalMs = Number(process.env.QUALIFLOW_SYNC_INTERVAL_MS) || 30 * 60_000;
-      console.log(`🔁 QualiFlow 에이전트 데몬 시작 — ${Math.round(intervalMs / 60_000)}분마다 전체 동기화.`);
-      for (;;) {
-        const startedAt = new Date().toISOString();
-        console.log(`\n[${startedAt}] 동기화 시작...`);
-        try {
-          const summaries = await fetchAllAccounts({ cached: false });
-          console.log("── 사이클 요약 ──");
-          for (const summary of summaries) {
-            console.log(`   ${summary.channel}/${summary.label}: 대화 ${summary.conversationCount} · 메시지 ${summary.messageCount}`);
-          }
-        } catch (error) {
-          // 한 사이클이 실패해도 데몬은 죽지 않는다(다음 주기에 재시도).
-          console.error(`동기화 사이클 오류: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        await new Promise((resolveSleep) => setTimeout(resolveSleep, intervalMs));
-      }
-    }
-
     case "pair": {
       const code = args[1];
       if (!code) {
@@ -272,7 +251,7 @@ async function main() {
 
     case "watch": {
       // 실시간(주기) fetch 상주 — 매 사이클 전체 계정 fetch 후 클라우드로 push(인박스 최신화).
-      // daemon과 달리 push까지 하고, 실패 시 지수 백오프로 재시도(Ctrl-C 종료).
+      // fetch 후 push까지 하고, 실패 시 지수 백오프로 재시도(Ctrl-C 종료).
       await watch();
       return;
     }
@@ -303,7 +282,6 @@ async function main() {
           "  fetch all [--cached]                등록된 모든 계정 한 번에 → 합산 요약",
           "  threads <channel> [label]           불러온 대화의 threadId 목록(발송 대상 고르기)",
           "  send <channel> <label> <받는이> <텍스트>   메시지 발송(받는이=me 또는 threadId)",
-          "  daemon                              백그라운드 상주 — 주기적 전체 동기화(설치형, fetch만)",
           "  watch                               실시간 상주 — 주기적 fetch + 클라우드 push(인박스 최신화)",
           "  pair <코드> | status                페어링 / 서버 연결 확인",
           "  push                                .data의 정규화 대화를 서버로 올리기(인그est)",

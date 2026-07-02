@@ -239,7 +239,6 @@ export async function loadConversationSourceFromDb(): Promise<ConversationSource
 
   return {
     status: {
-      kind: "supabase",
       label: "DB 연결",
       detail: `leads ${leads.length}`,
       tone: "ok"

@@ -7,6 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
@@ -27,9 +28,8 @@ export async function findChrome(): Promise<string | null> {
   return null;
 }
 
-export function delay(ms: number): Promise<void> {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
-}
+// Node 내장 프라미스 타이머를 그대로 재export(기존 delay(ms) 호출부 호환).
+export { delay };
 
 // 에이전트 데이터 폴더(.data) 안의 파일 경로를 만든다.
 //   - 설치본: QUALIFLOW_HOME/.data  (런처 run.sh/run.cmd가 QUALIFLOW_HOME을 세팅함)

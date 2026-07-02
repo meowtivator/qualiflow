@@ -72,9 +72,6 @@ importers:
       '@qualiflow/adapter-mock':
         specifier: workspace:*
         version: link:../../packages/adapter-mock
-      '@qualiflow/adapter-telegram':
-        specifier: workspace:*
-        version: link:../../packages/adapter-telegram
       '@qualiflow/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -149,13 +146,6 @@ importers:
         version: 6.0.3
 
   packages/adapter-instagram:
-    dependencies:
-      '@qualiflow/adapter-chat':
-        specifier: workspace:*
-        version: link:../adapter-chat
-      '@qualiflow/core':
-        specifier: workspace:*
-        version: link:../core
     devDependencies:
       '@types/node':
         specifier: 25.9.1
@@ -168,35 +158,6 @@ importers:
         version: 6.0.3
 
   packages/adapter-mock:
-    dependencies:
-      '@qualiflow/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      typescript:
-        specifier: 6.0.3
-        version: 6.0.3
-
-  packages/adapter-telegram:
-    dependencies:
-      '@qualiflow/adapter-chat':
-        specifier: workspace:*
-        version: link:../adapter-chat
-      '@qualiflow/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      '@types/node':
-        specifier: 25.9.1
-        version: 25.9.1
-      tsx:
-        specifier: 4.20.6
-        version: 4.20.6
-      typescript:
-        specifier: 6.0.3
-        version: 6.0.3
-
-  packages/adapter-whatsapp:
     dependencies:
       '@qualiflow/core':
         specifier: workspace:*

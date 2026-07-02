@@ -2,81 +2,29 @@
 
 Alibaba inbound buyer adapter for QualiFlow.
 
-This package does not scrape Alibaba. It defines the first integration boundary:
+This package defines the Alibaba integration boundary:
 
-- normalize Alibaba buyer/inquiry data into QualiFlow `Lead`
+- normalize Alibaba/OneTalk conversation data into QualiFlow `Lead`/`Thread`/`Message`
 - expose an Alibaba `ConversationAdapter` shape for imported or synced data
-- build search candidates for sub-channel discovery such as Instagram, LinkedIn, and Facebook
-- run optional headless discovery against generated search URLs
+- runtime connector (`./runtime`): operator-owned Chrome session — login, inbox
+  extraction, message send, and headless SNS discovery used by `apps/agent`
 
-The product direction is an operator-owned Alibaba/OneTalk browser session. Login state, cookies, Playwright profiles, and relogin handling live in the headless/runtime connector, not in the pure adapter entrypoint.
+The product direction is an operator-owned Alibaba/OneTalk browser session. Login
+state, cookies, Chrome profiles, and relogin handling live in the runtime connector
+(`src/cli/chrome-cdp.ts`, `extract-session.ts`, `send-session.ts`), not in the pure
+adapter entrypoint.
 
-## Headless discovery
-
-The headless runner reads a JSON dataset, generates buyer/company/location search URLs, opens them with Playwright, and returns matched website/social links.
-
-```bash
-pnpm --filter @qualiflow/adapter-alibaba headless:discover -- \
-  --input ./alibaba-buyers.json \
-  --output ./discovery-report.json \
-  --channel chrome
-```
-
-Input must be a JSON array matching `AlibabaInboundBuyer`.
-
-```json
-[
-  {
-    "externalLeadId": "ali-1001",
-    "buyerName": "Olivia Grant",
-    "companyName": "Harbor Beauty Imports",
-    "countryCode": "US",
-    "receivedAt": "2026-05-17T10:00:00.000Z"
-  }
-]
-```
-
-Use `--headed` when debugging the browser. Use `--executable-path /path/to/browser` when the host does not have a Chrome channel available.
-
-The runner does not bypass login, CAPTCHA, or anti-bot checks. If a search page requires human verification, the report marks that candidate as `blocked`.
-
-## Inquiry network recording
-
-The inquiry recorder reuses a locally saved Alibaba browser session, opens OneTalk, and records fetch/XHR traffic while the operator manually clicks inquiry lists and buyer threads.
+## CLI (dev)
 
 ```bash
-pnpm --filter @qualiflow/adapter-alibaba inquiry:record
+pnpm --filter @qualiflow/adapter-alibaba inquiry:login    # 로그인 창(세션 저장)
+pnpm --filter @qualiflow/adapter-alibaba inquiry:extract  # 인박스 추출(정규화 JSON)
+pnpm --filter @qualiflow/adapter-alibaba inquiry:send     # 메시지 발송
 ```
 
-Default URL:
+세 CLI 모두 로그인/CAPTCHA를 우회하지 않는다 — 로그인한 운영자가 브라우저에서 이미 접근할 수
+있는 데이터만 읽고 쓴다. SNS 탐색(`headless.ts`의 `discoverBuyerSns`)은 `apps/agent`의
+fetch 사이클이 직접 호출한다.
 
-```text
-https://onetalk.alibaba.com/message/weblitePWA.htm?spm=a2700.product_home_fy25.home_header.108.2ce23a90UlLW4M&isGray=1&from=menu&hideMenu=1#/
-```
-
-Expected local files:
-
-- `../../.auth/alibaba-chrome-profile` - persistent Chrome profile from a manual Alibaba login.
-- `../../apps/web/.data/alibaba-connection.json` - file-backed connector status written after `inquiry:login` completes.
-- `../../.captures/alibaba-inquiry/...` - ignored capture output with HAR, network events, WebSocket events, IndexedDB snapshots, and redacted response previews.
-
-The recorder does not automate login, bypass CAPTCHA, or send messages. It only records network traffic that the logged-in operator can already access in the browser.
-
-Capture outputs:
-
-- `network-events.jsonl` - request/response metadata for fetch and XHR traffic.
-- `responses/*.txt` - redacted text previews for readable fetch/XHR response bodies.
-- `websocket-events.jsonl` - CDP WebSocket open/close/frame metadata with redacted payload previews.
-- `indexeddb-snapshot.json` - browser IndexedDB database/store names, counts, key lists, and small redacted sample records from the current OneTalk page.
-- `network.har.zip` - browser HAR archive for low-level replay/debugging.
-- `summary.json` - capture file locations and event counts.
-
-Useful options:
-
-```bash
-pnpm --filter @qualiflow/adapter-alibaba inquiry:record -- \
-  --indexeddb-sample-records 5 \
-  --max-websocket-payload-chars 40000
-```
-
-Use `--no-indexeddb` when you only need network/WebSocket data. The recorder stores redacted previews for analysis, not raw buyer message exports.
+(과거 역공학용 네트워크 레코더 `record-inquiry.ts` 와 단독 headless CLI 는 extract-session /
+agent 경로로 흡수되어 삭제됨 — 필요하면 git 히스토리 참조.)

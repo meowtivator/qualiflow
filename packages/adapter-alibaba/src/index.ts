@@ -79,15 +79,6 @@ function normalizeText(value?: string) {
   return value?.trim().replace(/\s+/g, " ") || "";
 }
 
-function toEntityId(prefix: string, value: string) {
-  const normalized = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-  return `${prefix}_${normalized || "unknown"}`;
-}
-
 function buildGoogleSearchUrl(query: string) {
   return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 }
@@ -164,36 +155,6 @@ export function buildAlibabaDiscoveryCandidates(input: AlibabaInboundBuyer): Ali
   return candidates;
 }
 
-export function normalizeAlibabaLead(input: AlibabaInboundBuyer): Lead {
-  const createdAt = input.receivedAt;
-  const updatedAt = input.updatedAt ?? input.receivedAt;
-  const discoveryCandidates = buildAlibabaDiscoveryCandidates(input);
-
-  return {
-    id: toEntityId("lead_alibaba", input.externalLeadId),
-    clientId: input.clientId,
-    displayName: normalizeText(input.buyerName) || "Unknown Alibaba buyer",
-    companyName: normalizeText(input.companyName) || undefined,
-    countryCode: normalizeText(input.countryCode) || undefined,
-    countryName: normalizeText(input.countryName) || undefined,
-    profileImageUrl: normalizeText(input.profileImageUrl) || undefined,
-    sourceChannelIds: ["alibaba"],
-    stage: "new",
-    createdAt,
-    updatedAt,
-    metadata: {
-      alibabaExternalLeadId: input.externalLeadId,
-      alibabaPurchaseGrade: input.purchaseGrade ?? null,
-      region: normalizeText(input.region) || null,
-      profileImageUrl: normalizeText(input.profileImageUrl) || null,
-      sourceUrl: normalizeText(input.sourceUrl) || null,
-      inquiryText: normalizeText(input.inquiryText) || null,
-      productInterest: input.productInterest ?? [],
-      discoveryCandidateCount: discoveryCandidates.length
-    }
-  };
-}
-
 function paginate<TItem>(items: TItem[], request?: PageRequest): Page<TItem> {
   const limit = request?.limit ?? items.length;
   const offset = request?.cursor ? Number.parseInt(request.cursor, 10) : 0;
@@ -259,8 +220,6 @@ export function createAlibabaAdapter(options: CreateAlibabaAdapterOptions = {}):
     }
   };
 }
-
-export const alibabaAdapter = createAlibabaAdapter();
 
 // 참고: 헤드리스(Playwright) 코드는 일부러 여기서 re-export하지 않는다.
 // index.ts는 브라우저/서버 어디서나 번들 가능한 "순수" 진입점으로 유지하고,

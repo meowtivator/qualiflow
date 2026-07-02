@@ -17,7 +17,7 @@ tail -f ~/Library/Logs/qualiflow-agent.log
 bash apps/agent/packaging/macos/uninstall.sh
 ```
 
-데몬은 `cli.ts daemon`을 돌립니다 = 주기적으로 `fetch all`(창 안 뜨는 off-screen). 동기화 주기는
+상주는 `cli.ts watch`를 돌립니다 = 주기적 `fetch all` + (페어링 시) 클라우드 push. 동기화 주기는
 launchd plist의 `QUALIFLOW_SYNC_INTERVAL_MS`(ms, 기본 30분)로 조정.
 
 > ⚠️ 전제: 채널들은 미리 `add <channel> <label>`로 로그인돼 있어야 합니다(로그인 창은 사람이 직접).
@@ -59,7 +59,7 @@ dist/package/
 ```
 - **데이터/세션은 `QUALIFLOW_HOME`(기본 `~/.qualiflow`)** 에 쌓인다 → 레포 밖에서 동작.
 - **실행 방식**: 사용자가 더블클릭 안 함. 설치마법사가 이 폴더를 숨겨진 위치에 복사 + launchd에
-  `run.sh daemon`을 등록 → 백그라운드 상주. (이 macOS launchd install.sh는 *dev(레포)* 용; 배포본은
+  `run.sh watch`를 등록 → 백그라운드 상주. (이 macOS launchd install.sh는 *dev(레포)* 용; 배포본은
   설치마법사가 같은 launchd 등록을 패키지 경로로.)
 
 ## macOS 설치본 (.command, 서명 우회) — 됨
@@ -71,7 +71,7 @@ pnpm --filter @qualiflow/agent dist:macos     # → apps/agent/dist/macos-dist/ 
 
 받는 사람: `install.command` **우클릭 → 열기**(서명 없어 더블클릭은 막힘) → 설치마법사가:
 ①`package/`를 `~/Library/Application Support/QualiFlow/`로 복사 ②격리 속성 해제(`xattr` = 서명 우회)
-③**launchd 등록**(`run.sh daemon`, 로그인 자동시작+상시) → 백그라운드 동기화 시작.
+③**launchd 등록**(`run.sh watch`, 로그인 자동시작+상시) → 백그라운드 동기화 시작.
 데이터/세션은 `~/.qualiflow`. 채널 로그인은 `…/QualiFlow/run.sh add <채널> <라벨>`(이때만 크롬 보임).
 > ⚠️ 스크립트 문법 + 생성 plist 유효성은 검증함. *실제 설치 동작*은 받는 입장에서 한 번 확인 필요
 > (여기서 깔면 이 맥에 서비스가 등록되는 부작용이라 미실행).
@@ -88,7 +88,7 @@ pnpm --filter @qualiflow/agent dist:macos     # → apps/agent/dist/macos-dist/ 
    - macOS: 우클릭 → "열기"(Gatekeeper 우회), 또는 `xattr -dr com.apple.quarantine <앱>`.
    - Windows: SmartScreen "추가 정보 → 실행".
    - (정식 서명본은 Apple Developer / Windows 코드서명 인증서가 생기면.)
-3. **Windows 자동실행** — 작업 스케줄러 또는 서비스로 `daemon` 등록(이 macOS launchd에 대응).
+3. **Windows 자동실행** — 작업 스케줄러 또는 서비스로 `watch` 등록(이 macOS launchd에 대응).
 4. **클라우드 연결(본인 VPS)** — 데몬이 바깥(내 서버)으로 상시 연결을 잡고: ①명령 수신(등록/동기화/발송)
    ②정규화 데이터를 서버 DB로 push → 프론트가 표시. 미뤄둔 **페어링/보안 레이어**가 여기 붙는다.
 

@@ -1,13 +1,10 @@
 // 에이전트는 별도 프로세스라 Next처럼 .env.local을 자동 로드하지 않는다.
 // 텔레그램 키 등(TELEGRAM_API_ID/HASH)을 apps/web/.env.local 에 두면 읽어 쓰도록 간단 로더를 둔다.
-// (이미 셸 env에 있으면 덮어쓰지 않는다.)
+// Node 내장 process.loadEnvFile 사용(≥20.12) — 이미 셸 env에 있는 키는 덮어쓰지 않는다(검증됨).
 
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(here, "../../..");
+import { REPO_ROOT } from "./accounts";
 
 export function loadLocalEnv(): void {
   // 배포본은 QUALIFLOW_HOME/.env.local 을 우선 읽는다(TELEGRAM_* 등). 개발에선 레포의 .env.local.
@@ -18,26 +15,10 @@ export function loadLocalEnv(): void {
     resolve(REPO_ROOT, ".env.local")
   ];
   for (const file of files) {
-    let content: string;
     try {
-      content = readFileSync(file, "utf8");
+      process.loadEnvFile(file);
     } catch {
-      continue; // 파일 없으면 건너뜀
-    }
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) {
-        continue;
-      }
-      const eq = trimmed.indexOf("=");
-      if (eq < 0) {
-        continue;
-      }
-      const key = trimmed.slice(0, eq).trim();
-      const value = trimmed.slice(eq + 1).trim();
-      if (key && !(key in process.env)) {
-        process.env[key] = value;
-      }
+      // 파일 없으면 건너뜀
     }
   }
 }

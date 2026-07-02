@@ -10,7 +10,6 @@
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
@@ -29,12 +28,6 @@ import makeWASocket, {
 import qrcode from "qrcode-terminal";
 
 import { cacheMedia } from "../media";
-
-const here = dirname(fileURLToPath(import.meta.url));
-// src/connectors/ → 네 단계 위가 레포 루트
-const REPO_ROOT = resolve(here, "../../../..");
-const DEFAULT_AUTH_DIR = resolve(REPO_ROOT, ".auth/whatsapp-baileys");
-const DEFAULT_OUTPUT_FILE = resolve(REPO_ROOT, "apps/web/.data/whatsapp-conversations.json");
 
 // 히스토리가 이 시간(ms)동안 더 안 오면 동기화 끝으로 보고 마무리한다(연결/이벤트마다 리셋).
 // 첫 페어링 직후 히스토리가 늦게 오기도 해서 넉넉히 둔다.
@@ -204,10 +197,9 @@ async function readExistingConversations(file: string): Promise<ChatRawConversat
 }
 
 export async function fetchWhatsApp(
-  options: { authDir?: string; outputFile?: string } = {}
+  options: { authDir: string; outputFile: string }
 ): Promise<ChatRawConversation[]> {
-  const authDir = options.authDir ?? DEFAULT_AUTH_DIR;
-  const outputFile = options.outputFile ?? DEFAULT_OUTPUT_FILE;
+  const { authDir, outputFile } = options;
   await mkdir(authDir, { recursive: true });
   muteLibsignalNoise(); // libsignal 콘솔 노이즈 가리기(디버그 모드 아니면)
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -405,8 +397,8 @@ export async function fetchWhatsApp(
 
 // 메시지 발송. 저장된 세션으로 연결 → connection:open에서 한 건 보내고 소켓 종료.
 //   to = "me"(내 번호, 나에게 테스트) | 불러온 대화의 threadId(=상대 jid, 예: 1234@s.whatsapp.net)
-export async function sendWhatsApp(options: { authDir?: string; to: string; text: string }): Promise<void> {
-  const authDir = options.authDir ?? DEFAULT_AUTH_DIR;
+export async function sendWhatsApp(options: { authDir: string; to: string; text: string }): Promise<void> {
+  const authDir = options.authDir;
   muteLibsignalNoise();
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
 

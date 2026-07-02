@@ -5,9 +5,7 @@
 //     진짜 웹 세션이라 모바일 사칭 API보다 계정 정지 위험이 낮다.
 //   - 세션은 영구 프로필(.auth/instagram[--label])에 로컬 저장(★서버로 안 감).
 
-import { spawn, type ChildProcess } from "node:child_process";
-import { access } from "node:fs/promises";
-
+import { delay, findChrome, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
 import type { MessageAttachment } from "@qualiflow/core";
 import { chromium, type Page } from "playwright-core";
@@ -18,44 +16,6 @@ const DEBUG_PORT = 9223;
 const INBOX_URL = "https://www.instagram.com/direct/inbox/";
 const IG_APP_ID = "936619743392459"; // 인스타그램 웹 앱 id(공개값)
 const LOGIN_TIMEOUT_MS = Number(process.env.QUALIFLOW_LOGIN_TIMEOUT_MS) || 5 * 60 * 1000;
-
-const CHROME_CANDIDATES = [
-  process.env.CHROME_PATH,
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium"
-].filter((value): value is string => Boolean(value));
-
-async function findChrome(): Promise<string> {
-  for (const candidate of CHROME_CANDIDATES) {
-    try {
-      await access(candidate);
-      return candidate;
-    } catch {
-      // 다음 후보
-    }
-  }
-  throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
-}
-
-async function waitForCdp(port: number, timeoutMs = 20_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) {
-        return true;
-      }
-    } catch {
-      // 아직 준비 안 됨
-    }
-    await delay(400);
-  }
-  return false;
-}
 
 // IG 미디어 노드(이미지 후보/영상 버전)는 여러 래퍼(media / visual_media / clip) 아래 같은 모양으로 반복된다.
 //   image_versions2.candidates[].url = 화질별 이미지 URL, video_versions[].url = 화질별 영상 URL.
@@ -113,26 +73,6 @@ async function callInbox(page: Page): Promise<IgInbox | null> {
   return (result as IgInbox | null) ?? null;
 }
 
-// offscreen=true: 창을 아예 안 띄운다(사용자 안 보임, fetch/send용). 로그인은 보여야 하므로 false.
-//   ★macOS는 --window-position으로 창을 못 숨겨서 headless=new를 쓴다(페이지는 그대로 렌더됨).
-//   UA는 'Headless' 표시를 떼 탐지를 줄인다(QUALIFLOW_CHROME_UA로 덮어쓰기 가능). SHOW_BROWSER=1이면 창 표시.
-function spawnChrome(profileDir: string, chromePath: string, offscreen: boolean): ChildProcess {
-  const args = [
-    `--user-data-dir=${profileDir}`,
-    `--remote-debugging-port=${DEBUG_PORT}`,
-    "--no-first-run",
-    "--no-default-browser-check"
-  ];
-  if (offscreen && process.env.QUALIFLOW_SHOW_BROWSER !== "1") {
-    const ua =
-      process.env.QUALIFLOW_CHROME_UA ||
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
-    args.push("--headless=new", `--user-agent=${ua}`);
-  }
-  args.push(INBOX_URL);
-  return spawn(chromePath, args, { stdio: "ignore" });
-}
-
 // 텍스트가 맞는 첫 클릭가능 요소(버튼/링크/role=button)를 누른다.
 async function clickByText(page: Page, texts: string[]): Promise<boolean> {
   for (const label of texts) {
@@ -177,7 +117,10 @@ async function withInstagramPage<T>(
   options: { offscreen?: boolean } = {}
 ): Promise<T> {
   const chromePath = await findChrome();
-  const chrome = spawnChrome(profileDir, chromePath, options.offscreen ?? false);
+  if (!chromePath) {
+    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
+  }
+  const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, INBOX_URL, { offscreen: options.offscreen });
   try {
     if (!(await waitForCdp(DEBUG_PORT))) {
       throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 있으면 닫고 다시 시도하세요.");
