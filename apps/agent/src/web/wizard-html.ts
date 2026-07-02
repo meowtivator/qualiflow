@@ -8,7 +8,7 @@ export const WIZARD_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>QualiFlow 설치</title>
+<title>계정 연결 마법사</title>
 <style>
   :root { --ink:#1c1b22; --ink2:#5b5966; --muted:#8a8794; --line:#e7e5ee; --bg:#f6f5fb; --card:#fff; --primary:#4f46e5; --on-primary:#fff; --ok-bg:#e7f6ef; --ok:#0f7a52; --warn-bg:#fdf3e3; --warn:#9a6800; }
   * { box-sizing:border-box; }
@@ -63,7 +63,7 @@ export const WIZARD_HTML = `<!doctype html>
 </head>
 <body>
 <div class="wrap">
-  <div class="brand"><div class="logo">Q</div><b>QualiFlow 설치</b></div>
+  <div class="brand"><div class="logo"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div><b>계정 연결 마법사</b></div>
   <div class="card">
     <div class="stepper" id="stepper"></div>
     <div id="body"></div>
@@ -76,11 +76,13 @@ export const WIZARD_HTML = `<!doctype html>
 </div>
 <script>
 var STEPS=["계정 연결","채널 연결","완료"];
+// 채널 아이콘 = CRM(buyer-crm)의 ChannelLogo와 동일한 인라인 SVG 글리프 + 브랜드 색.
+// (이모지 대신 실제 로고로 한눈에 알아보게. 경로/색은 bpd src/features/crm-views/channel.tsx 단일 출처와 일치.)
 var CH={
-  whatsapp:{nm:"WhatsApp",ic:"\\uD83D\\uDCAC",hw:"QR 스캔",note:"폰 → 설정 → 연결된 기기 → 화면의 QR 스캔"},
-  alibaba:{nm:"Alibaba",ic:"\\uD83C\\uDFEC",hw:"로그인 창",note:"열린 창에서 평소처럼 로그인하세요"},
-  instagram:{nm:"Instagram",ic:"\\uD83D\\uDCF7",hw:"로그인 창",note:"열린 창에서 로그인하세요"},
-  telegram:{nm:"Telegram",ic:"\\u2708\\uFE0F",hw:"전화 코드",note:"전화번호 입력 → 받은 코드 입력"}
+  whatsapp:{nm:"WhatsApp",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#25a766'><path d='M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm5.4 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.5-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.7 1.8c.1.1.1.3 0 .5l-.3.4-.3.3c-.1.1-.3.3-.1.5.1.3.6 1 1.3 1.6.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.8c.2-.2.3-.2.6-.1l1.7.8c.2.1.4.2.5.3.1.2.1.7-.2 1.4Z'/></svg>",hw:"QR 스캔",note:"폰 → 설정 → 연결된 기기 → 화면의 QR 스캔"},
+  alibaba:{nm:"Alibaba",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#ff6a00'><path d='M14.391 16.22c-.963.044-.865-.459-.302-1.234 1.32-1.768 3.82-4.236 3.906-5.982.151-2.283-2.143-3.026-4.501-3.004-1.645.022-3.344.492-4.501.906C5 8.315 2.489 10.576.909 13.076-.768 15.554-.216 17.923 3.322 18c2.716-.109 4.48-.862 6.32-1.802.01 0-5.086 1.453-6.958.383l-.008-.002c-.193-.11-.404-.264-.457-.683-.012-.885 1.46-1.802 2.283-2.097v-1.533a5.374 5.374 0 0 0 1.955.366 5.378 5.378 0 0 0 3.472-1.265c.037.13.056.278.044.447h.371c.048-.394-.172-.706-.172-.706-.333-.529-.915-.52-.915-.52s.315.137.529.466a4.953 4.953 0 0 1-4.665.932l1.21-1.2-.336-.874c2.435-.852 4.48-1.507 7.812-2.085l-.746-.624.389-.24c2.01.568 3.325.985 3.253 2.051a2.672 2.672 0 0 1-.202.611c-.584 1.158-2.326 3.09-3.029 3.898-.465.535-.92 1.06-1.245 1.562-.335.503-.54.971-.551 1.42.043 3.504 10.334-1.64 12.324-3.003-2.943 1.266-6.113 2.489-9.609 2.718Z'/></svg>",hw:"로그인 창",note:"열린 창에서 평소처럼 로그인하세요"},
+  instagram:{nm:"Instagram",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#c13584'><path d='M7.5 2h9A5.5 5.5 0 0 1 22 7.5v9a5.5 5.5 0 0 1-5.5 5.5h-9A5.5 5.5 0 0 1 2 16.5v-9A5.5 5.5 0 0 1 7.5 2Zm0 2A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20h9a3.5 3.5 0 0 0 3.5-3.5v-9A3.5 3.5 0 0 0 16.5 4h-9ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm5.3-2.8a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z'/></svg>",hw:"로그인 창",note:"열린 창에서 로그인하세요"},
+  telegram:{nm:"Telegram",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#2aabee'><path d='M21.9 4.3 2.8 11.7c-1 .4-1 1 0 1.3l4.8 1.5L19 7.1c.5-.3 1-.2.6.2l-9.2 8.3-.3 4.4c.4 0 .6-.2.8-.4l2-1.9 4.1 3c.8.4 1.3.2 1.5-.7l2.7-12.7c.3-1.1-.4-1.6-1.3-1Z'/></svg>",hw:"전화 코드",note:"전화번호 입력 → 받은 코드 입력"}
 };
 var st={step:0,paired:false,accounts:[],connecting:{},adding:{}};
 
@@ -198,7 +200,11 @@ document.addEventListener("keydown",function(e){
   if(e.key==="Enter" && e.target.classList && e.target.classList.contains("lblinput")){ startConnect(e.target.dataset.ch, e.target.value); }
 });
 
-loadStatus().then(render).catch(function(){ render(); });
+loadStatus().then(function(){
+  // 웹 "채널 추가" 버튼은 ?add=1 로 연다. 이미 페어링돼 있으면 채널 단계로 바로 진입(딸깍 한 번 절약).
+  try { if(new URLSearchParams(location.search).get("add")==="1" && st.paired) st.step=1; } catch(e){}
+  render();
+}).catch(function(){ render(); });
 setInterval(function(){ if(st.step===1) loadStatus().then(grid); }, 4000);
 </script>
 </body>
