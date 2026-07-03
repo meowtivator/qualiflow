@@ -51,21 +51,41 @@ function newClient(session: string, apiId: number, apiHash: string): TelegramCli
   return client;
 }
 
-// 전화 코드 로그인(대화형). 세션 문자열을 sessionDir 에 저장한다.
-export async function loginTelegram(sessionDir: string): Promise<void> {
+// 로그인에 필요한 값(전화번호/코드/2FA비번)을 어디서 얻을지 주입하는 콜백들.
+// CLI는 readline(터미널)으로, 웹 마법사는 HTTP로 받은 값을 Promise로 넘긴다.
+export type TelegramAuthPrompts = {
+  phoneNumber: () => Promise<string>;
+  phoneCode: () => Promise<string>;
+  password: () => Promise<string>;
+  onError?: (err: Error) => void;
+};
+
+// 전화 코드 로그인. prompts를 주면 그 값으로(웹), 안 주면 readline(터미널). 세션을 sessionDir 에 저장한다.
+export async function loginTelegram(sessionDir: string, prompts?: TelegramAuthPrompts): Promise<void> {
   const { apiId, apiHash } = getApiCreds();
   const client = newClient(await loadSession(sessionDir), apiId, apiHash);
 
-  const rl = createInterface({ input, output });
-  try {
+  if (prompts) {
+    // 웹 흐름: 주입된 콜백으로 로그인(전화/코드/2FA는 마법사가 HTTP로 공급).
     await client.start({
-      phoneNumber: async () => (await rl.question("전화번호(국가코드 포함, 예: +821012345678): ")).trim(),
-      password: async () => (await rl.question("2단계 비밀번호(없으면 그냥 Enter): ")).trim(),
-      phoneCode: async () => (await rl.question("받은 인증 코드: ")).trim(),
-      onError: (err) => console.error("로그인 중 오류:", err instanceof Error ? err.message : err)
+      phoneNumber: prompts.phoneNumber,
+      phoneCode: prompts.phoneCode,
+      password: prompts.password,
+      onError: (err) => prompts.onError?.(err instanceof Error ? err : new Error(String(err)))
     });
-  } finally {
-    rl.close();
+  } else {
+    // CLI 흐름: 터미널에서 물어본다(기존 동작).
+    const rl = createInterface({ input, output });
+    try {
+      await client.start({
+        phoneNumber: async () => (await rl.question("전화번호(국가코드 포함, 예: +821012345678): ")).trim(),
+        password: async () => (await rl.question("2단계 비밀번호(없으면 그냥 Enter): ")).trim(),
+        phoneCode: async () => (await rl.question("받은 인증 코드: ")).trim(),
+        onError: (err) => console.error("로그인 중 오류:", err instanceof Error ? err.message : err)
+      });
+    } finally {
+      rl.close();
+    }
   }
 
   await saveSession(sessionDir, String(client.session.save()));

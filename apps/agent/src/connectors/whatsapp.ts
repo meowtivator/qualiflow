@@ -395,6 +395,73 @@ export async function fetchWhatsApp(
   });
 }
 
+// 로그인 전용(히스토리 동기화 없음) — 마법사 웹 흐름용. QR 문자열을 onQr로 흘려보내고, 폰 스캔으로
+// connection:open 되면 세션(creds)을 authDir에 저장하고 소켓을 닫는다. 히스토리 fetch는 이후 정상
+// fetch 경로가 담당한다. ★515(restart required) close는 정상 흐름이라 open까지 재연결한다.
+//   - onQr: connection.update의 qr 문자열이 올 때마다 호출(마법사가 이미지로 렌더). 만료되면 새 값이 온다.
+//   - timeoutMs: 이 시간 안에 스캔이 없으면 reject(무한대기 금지).
+export async function loginWhatsApp(options: {
+  authDir: string;
+  onQr: (qr: string) => void;
+  timeoutMs?: number;
+}): Promise<void> {
+  const { authDir, onQr } = options;
+  const timeoutMs = options.timeoutMs ?? 3 * 60_000;
+  await mkdir(authDir, { recursive: true });
+  muteLibsignalNoise();
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+
+  await new Promise<void>((resolveLogin, rejectLogin) => {
+    let settled = false;
+    let reconnects = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let sock: ReturnType<typeof makeWASocket> | undefined;
+
+    const done = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      sock?.end(undefined);
+      restoreConsole();
+      if (error) rejectLogin(error);
+      else resolveLogin();
+    };
+
+    function connect(): void {
+      sock = makeWASocket({ auth: state, ...(WA_DEBUG ? {} : { logger: silentLogger }) });
+      sock.ev.on("creds.update", saveCreds);
+      sock.ev.on("connection.update", (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        if (qr) onQr(qr);
+        if (connection === "open") {
+          console.log("✅ WhatsApp 로그인 완료 — 세션을 로컬에 저장했습니다.");
+          done();
+        }
+        if (connection === "close" && !settled) {
+          const statusCode =
+            typeof lastDisconnect?.error === "object" && lastDisconnect?.error !== null
+              ? (lastDisconnect.error as { output?: { statusCode?: number } }).output?.statusCode
+              : undefined;
+          if (statusCode === DisconnectReason.loggedOut) {
+            done(new Error("WhatsApp 로그아웃됨 — 다시 QR을 스캔하세요."));
+            return;
+          }
+          // 515(restart required) 등 loggedOut 아닌 close는 재연결(페어링 직후 정상 흐름).
+          if (reconnects < MAX_RECONNECTS) {
+            reconnects += 1;
+            connect();
+          } else {
+            done(new Error("WhatsApp 연결이 반복 실패했습니다(다시 시도하세요)."));
+          }
+        }
+      });
+    }
+
+    connect();
+    timer = setTimeout(() => done(new Error("WhatsApp QR 스캔 타임아웃 — 다시 시도하세요.")), timeoutMs);
+  });
+}
+
 // 메시지 발송. 저장된 세션으로 연결 → connection:open에서 한 건 보내고 소켓 종료.
 //   to = "me"(내 번호, 나에게 테스트) | 불러온 대화의 threadId(=상대 jid, 예: 1234@s.whatsapp.net)
 export async function sendWhatsApp(options: { authDir: string; to: string; text: string }): Promise<void> {
