@@ -173,7 +173,13 @@ export async function fetchWhatsAppInbox(label: string, options: { cached: boole
     conversations = await readChatData(file);
   } else {
     console.log(`🔌 WhatsApp(${label}) 커넥터 실행 — Baileys로 WhatsApp Web에 연결합니다...`);
-    conversations = await fetchWhatsApp({ authDir: sessionPath("whatsapp", label), outputFile: file });
+    // whatsapp-web(웹 화면) 세션이 같은 라벨로 페어링돼 있으면 그 화면의 표시이름으로 @lid 스레드를 실명화한다.
+    // 페어링 안 됐으면 fetchWhatsApp 안에서 폴더 없음 → 스킵(기존 전화번호 폴백 그대로).
+    conversations = await fetchWhatsApp({
+      authDir: sessionPath("whatsapp", label),
+      outputFile: file,
+      webProfileDir: sessionPath("whatsapp-web", label)
+    });
   }
   return summarize("whatsapp", label, conversations.length, createChatAdapter("whatsapp", conversations));
 }
