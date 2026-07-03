@@ -22,72 +22,26 @@ const CRLF = "\r\n";
 // ★배치의 사용자 노출 텍스트는 전부 ASCII(영문)로 쓴다 → cmd 코드페이지에 의존하지 않아 절대 안 깨진다.
 //   그래서 chcp 65001 과 UTF-8 BOM 을 뺐다(둘 다 실기기에서 오히려 한글을 깨뜨렸다). 한글 안내는 README.txt(메모장)에만.
 
+// 상주 3개를 창 없이 실행하는 헬퍼: `wscript run-hidden.vbs run.cmd <cmd>`.
+// run.cmd 를 직접 schtasks TR 로 걸면 로그온마다 검은 콘솔창이 뜬다 → VBS 로 감싸 창을 숨긴다.
+function hiddenTR(dest, cmd) {
+  // schtasks /TR 안의 따옴표는 \" 로 이스케이프. 최종 명령:
+  //   wscript "%DEST%\run-hidden.vbs" "%DEST%\run.cmd" <cmd>
+  return `wscript \\"${dest}\\run-hidden.vbs\\" \\"${dest}\\run.cmd\\" ${cmd}`;
+}
+// 인라인 /Create 로 등록된 task 에 재시작(3회·1분)·무제한 실행을 나중에 얹는 best-effort PowerShell 한 줄.
+// try/catch 로 감싸 실패해도 설치가 안 깨진다(등록·실행이 우선, 재시작은 보너스). PowerShell 문자열은
+// 작은따옴표라 배치 안에서 안전하고, task 이름에도 작은따옴표가 없어 이스케이프가 필요 없다.
+function psSettings(taskName) {
+  return (
+    'powershell -NoProfile -Command "try{ ' +
+    "$s=New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries " +
+    "-ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); " +
+    `Set-ScheduledTask -TaskName '${taskName}' -Settings $s | Out-Null ` +
+    '}catch{}"'
+  );
+}
 const DEST = `%LOCALAPPDATA%\\${APP}`;
-
-// 상주 task 를 XML 로 등록한다(schtasks /Create /XML). 인라인 /Create 는 RestartOnFailure·
-// ExecutionTimeLimit=무제한을 못 넣어서 (1)마법사가 죽으면 자동 재시작이 안 되고 (2)3일 뒤 중지될 수 있다.
-// XML 이면 그 둘을 확실히 지정한다. 실행 명령은 기존과 동일: wscript run-hidden.vbs run.cmd <cmd>(창 숨김).
-//
-// ※ XML 에는 절대경로가 필요하고 env 확장이 신뢰 불가라, task.xml 을 "템플릿"으로 딱 하나만 배포하고
-//   install.bat 이 설치 시점에 __DEST__/__USER__/__ARGS__ 를 실제값으로 치환해 task 마다 임시 XML 을 만든다.
-//   (배치 echo 로 XML 을 직접 쓰면 < > & 이스케이프가 지옥이라, 파일 치환이 훨씬 안전하다.)
-// - <ExecutionTimeLimit>PT0S</ExecutionTimeLimit> : 무제한(3일 후 중지 방지)
-// - <RestartOnFailure> Interval PT1M / Count 3 : 죽으면 1분 뒤 재시작, 최대 3회
-// - <LogonTrigger> + <LogonType>InteractiveToken</LogonType> : 로그인 세션에서 실행(크롬 로그인 창 때문에 필수)
-// - <Hidden>true</Hidden>, <MultipleInstances>IgnoreNew</MultipleInstances>, 배터리에도 계속 실행
-const TASK_XML_TEMPLATE = [
-  '<?xml version="1.0" encoding="UTF-16"?>',
-  '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
-  "  <RegistrationInfo>",
-  "    <Author>__USER__</Author>",
-  "    <Description>QualiFlow resident agent</Description>",
-  "  </RegistrationInfo>",
-  "  <Triggers>",
-  "    <LogonTrigger>",
-  "      <Enabled>true</Enabled>",
-  "      <UserId>__USER__</UserId>",
-  "    </LogonTrigger>",
-  "  </Triggers>",
-  "  <Principals>",
-  '    <Principal id="Author">',
-  "      <UserId>__USER__</UserId>",
-  "      <LogonType>InteractiveToken</LogonType>",
-  "      <RunLevel>LeastPrivilege</RunLevel>",
-  "    </Principal>",
-  "  </Principals>",
-  "  <Settings>",
-  "    <MultipleInstances>IgnoreNew</MultipleInstances>",
-  "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
-  "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
-  "    <AllowHardTerminate>true</AllowHardTerminate>",
-  "    <StartWhenAvailable>true</StartWhenAvailable>",
-  "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>",
-  "    <IdleSettings>",
-  "      <StopOnIdleEnd>false</StopOnIdleEnd>",
-  "      <RestartOnIdle>false</RestartOnIdle>",
-  "    </IdleSettings>",
-  "    <AllowStartOnDemand>true</AllowStartOnDemand>",
-  "    <Enabled>true</Enabled>",
-  "    <Hidden>true</Hidden>",
-  "    <RunOnlyIfIdle>false</RunOnlyIfIdle>",
-  "    <WakeToRun>false</WakeToRun>",
-  "    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
-  "    <Priority>7</Priority>",
-  "    <RestartOnFailure>",
-  "      <Interval>PT1M</Interval>",
-  "      <Count>3</Count>",
-  "    </RestartOnFailure>",
-  "  </Settings>",
-  '  <Actions Context="Author">',
-  "    <Exec>",
-  "      <Command>wscript</Command>",
-  // 실행 명령: wscript "DEST\run-hidden.vbs" "DEST\run.cmd" <cmd>. XML 이라 따옴표는 &quot; 엔티티로.
-  // install.bat 이 __DEST__(설치경로)·__CMD__(watch/serve/wizard) 를 치환한다.
-  "      <Arguments>&quot;__DEST__\\run-hidden.vbs&quot; &quot;__DEST__\\run.cmd&quot; __CMD__</Arguments>",
-  "    </Exec>",
-  "  </Actions>",
-  "</Task>"
-].join(CRLF) + CRLF;
 
 console.log("① 런타임 패키지 빌드...");
 execSync("node package-app.mjs", { cwd: here, stdio: "inherit" });
@@ -95,14 +49,6 @@ execSync("node package-app.mjs", { cwd: here, stdio: "inherit" });
 rmSync(distRoot, { recursive: true, force: true });
 mkdirSync(distRoot, { recursive: true });
 cpSync(pkgSrc, resolve(distRoot, "package"), { recursive: true });
-
-// task 등록용 XML 템플릿을 배포 폴더에 둔다(ASCII). install.bat 이 이걸 읽어 __DEST__/__USER__/__CMD__ 만
-// 치환하고 UTF-16 로 임시 XML 을 써서 schtasks /Create /XML 로 등록한다. 배포엔 이 원본 하나만 나간다.
-// 빌드 시점 자가검사: 세 토큰이 다 있어야 install.bat 치환이 성립한다(템플릿을 잘못 편집하면 여기서 멈춘다).
-for (const token of ["__DEST__", "__USER__", "__CMD__"]) {
-  if (!TASK_XML_TEMPLATE.includes(token)) throw new Error(`task-template.xml 에 ${token} 토큰이 없습니다 — install.bat 치환이 깨집니다.`);
-}
-writeFileSync(resolve(distRoot, "task-template.xml"), TASK_XML_TEMPLATE);
 
 // 설치 스크립트 — %LOCALAPPDATA%\QualiFlow 복사 + 작업 스케줄러(watch+serve) 등록 + 설정 마법사 자동 실행.
 // ※ 배치에서 다른 .cmd(run.cmd)를 호출할 땐 "call"을 붙인다 — 안 붙이면 제어가 넘어가고 안 돌아온다.
@@ -149,27 +95,34 @@ writeFileSync(
     ":qf_copied",
     "",
     "rem The 3 tasks run run.cmd wrapped by run-hidden.vbs (window mode 0) so no black console appears on logon.",
-    "rem Register each via XML (schtasks /Create /XML) so the task auto-restarts if it dies and never stops after 3 days.",
+    "rem Register each inline with schtasks /Create /SC ONLOGON - the proven form that registered fine on the",
+    "rem reference PC ('Ready'). (PR #88 switched to /Create /XML, which the real machine REJECTED so all 3 tasks",
+    "rem never registered at all - inline is the reliable path; restart/unlimited settings are added best-effort below.)",
     "rem   watch  - periodically reads channel inboxes and pushes to cloud (live sync, auto-start on logon).",
     "rem   serve  - takes reply/send commands from the dashboard and sends them on the real channels.",
     "rem   wizard - keeps the setup UI (pairing + add channel) on localhost:4317. This is what web 'Add channel' opens.",
-    "rem Build the per-task XML from task-template.xml: substitute install path, current user, and the sub-command,",
-    "rem then write it as UTF-16 (schtasks /XML requires Unicode when the xml declares encoding UTF-16). PowerShell does",
-    "rem both the substitution and the Unicode write, so we avoid escaping < > & inside batch echo.",
-    'set "QF_TPL=%DEST%\\task-template.xml"',
-    'set "QF_USER=%USERDOMAIN%\\%USERNAME%"',
-    "call :qf_mktask watch  \"%TEMP%\\qf-watch.xml\"",
-    `call :qf_regtask "${TASK_WATCH}"  "%TEMP%\\qf-watch.xml"`,
-    "call :qf_mktask serve  \"%TEMP%\\qf-serve.xml\"",
-    `call :qf_regtask "${TASK_SERVE}"  "%TEMP%\\qf-serve.xml"`,
-    "call :qf_mktask wizard \"%TEMP%\\qf-wizard.xml\"",
-    `call :qf_regtask "${TASK_WIZARD}" "%TEMP%\\qf-wizard.xml"`,
+    `schtasks /Create /TN "${TASK_WATCH}"  /TR "${hiddenTR("%DEST%", "watch")}"  /SC ONLOGON /F >nul`,
+    `schtasks /Create /TN "${TASK_SERVE}"  /TR "${hiddenTR("%DEST%", "serve")}"  /SC ONLOGON /F >nul`,
+    `schtasks /Create /TN "${TASK_WIZARD}" /TR "${hiddenTR("%DEST%", "wizard")}" /SC ONLOGON /F >nul`,
+    "",
+    "rem Best-effort: layer on auto-restart (3x, 1 min apart) and no execution time limit (never stop after 3 days)",
+    "rem via PowerShell Set-ScheduledTask. Inline /Create above cannot express these; this adds them after the fact.",
+    "rem Wrapped in try/catch so a failure here NEVER breaks the install - registration and run come first, restart is a bonus.",
+    psSettings(TASK_WATCH),
+    psSettings(TASK_SERVE),
+    psSettings(TASK_WIZARD),
+    "",
+    "rem Start all 3 now (do not wait for the next logon).",
     `schtasks /Run /TN "${TASK_WATCH}" >nul 2>&1`,
     `schtasks /Run /TN "${TASK_SERVE}" >nul 2>&1`,
     `schtasks /Run /TN "${TASK_WIZARD}" >nul 2>&1`,
     "",
+    "rem [Verify registration] Inline /Create above is silent (>nul). If the wizard task did not actually register",
+    "rem (e.g. a policy blocks Task Scheduler), fail loudly here instead of leaving the user with nothing running.",
+    `schtasks /Query /TN "${TASK_WIZARD}" >nul 2>&1 || (echo [Error] Failed to register the background task. Try running install.bat as administrator, then retry. & pause & exit /b 1)`,
+    "",
     "echo.",
-    "echo Done. Background sync/send/wizard are registered (auto-start on login, auto-restart if they crash).",
+    "echo Done. Background sync/send/wizard are registered (auto-start on login).",
     "echo Install location: %DEST%",
     "echo Data:             %USERPROFILE%\\.qualiflow   (login sessions stay on this PC)",
     "echo.",
@@ -204,23 +157,7 @@ writeFileSync(
     "  rem Use ping (not timeout) to wait: timeout errors when stdin is redirected; ping never does.",
     "  ping -n 6 127.0.0.1 >nul",
     ")",
-    "exit /b 0",
-    "",
-    "rem ---- subroutines (below the exit above; batch runs them only via call) ----",
-    "rem :qf_mktask <sub-command> <out-xml-path>  - render task-template.xml -> UTF-16 xml for this task.",
-    "rem   %~1 = watch|serve|wizard, %~2 = output xml path. Substitute install path, user, and sub-command,",
-    "rem   then write UTF-16 (Unicode) so schtasks /XML accepts the UTF-16 declaration.",
-    "rem   Use .Replace (plain string, no regex) so backslashes in the path stay literal - the tokens are unique",
-    "rem   fixed strings, so no regex is needed. %DEST% is already an absolute path (LOCALAPPDATA expanded at set time).",
-    ":qf_mktask",
-    'powershell -NoProfile -Command "$t=Get-Content -Raw -LiteralPath $env:QF_TPL;$t=$t.Replace(\'__DEST__\',$env:DEST).Replace(\'__USER__\',$env:QF_USER).Replace(\'__CMD__\',\'%~1\');Set-Content -LiteralPath \'%~2\' -Value $t -Encoding Unicode -NoNewline"',
-    "goto :eof",
-    "",
-    "rem :qf_regtask <task-name> <xml-path>  - register (overwrite) the task from its xml; report if it fails.",
-    ":qf_regtask",
-    'schtasks /Create /TN %1 /XML %2 /F >nul 2>&1',
-    "if errorlevel 1 echo [Warning] Could not register task %1. Run diagnose.bat to see details.",
-    "goto :eof"
+    "exit /b 0"
   ].join(CRLF) + CRLF
 );
 
