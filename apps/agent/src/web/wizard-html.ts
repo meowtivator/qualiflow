@@ -44,6 +44,9 @@ export const WIZARD_HTML = `<!doctype html>
   .accts { margin-top:10px; display:flex; flex-direction:column; gap:6px; }
   .acct { display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--bg); border-radius:8px; padding:7px 10px; }
   .acct .ann { font-size:13px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .acct-r { display:flex; align-items:center; gap:6px; }
+  .del { height:24px; width:24px; padding:0; border-radius:6px; border:1px solid var(--line); background:var(--card); color:var(--muted); font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center; }
+  .del:hover { border-color:#c0392b; color:#c0392b; background:var(--card); }
   .badge { font-size:12px; padding:3px 9px; border-radius:20px; background:var(--bg); color:var(--muted); white-space:nowrap; }
   .badge.ok { background:var(--ok-bg); color:var(--ok); }
   .badge.warn { background:var(--warn-bg); color:var(--warn); }
@@ -156,13 +159,17 @@ function grid(){
       // 배지 = 실제 상태. 진행중/실패(서버 connectState) 우선, 그 다음 실제 세션(a.connected).
       // ★핵심: 라벨만 등록되고 로그인 안 됐으면(연결 안 됨) "연결됨"이 아니라 "로그인 필요" 버튼을 보여
       //   준다 — 눌러서 그 라벨로 바로 로그인(startConnect). (예전엔 등록만 돼도 "연결됨"으로 속였다.)
+      if(removing[ckey(ch,a.label)]){
+        return '<div class="acct"><span class="ann">'+esc(a.label)+'</span><span class="badge warn">삭제 중\\u2026</span></div>';
+      }
       var cs=st.serverConnect[sckey(ch,a.label)];
       var badge;
       if(cs&&cs.status==="connecting"){ badge='<span class="badge warn">로그인 창 여는 중\\u2026</span>'; }
       else if(cs&&cs.status==="error"){ badge='<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer" title="'+esc(cs.message||"")+'">로그인 실패 \\u2014 다시 로그인</button>'; }
       else if(a.connected){ badge='<span class="badge ok">\\u2713 연결됨</span>'; }
       else { badge='<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer">로그인 필요 \\u2014 지금 로그인</button>'; }
-      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span>'+badge+'</div>';
+      var del='<button class="del" data-del-ch="'+ch+'" data-del-label="'+esc(a.label)+'" title="이 계정 연결 삭제">\\u2715</button>';
+      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span><span class="acct-r">'+badge+del+'</span></div>';
     });
     var busyNote=false;
     Object.keys(st.connecting).forEach(function(k){
@@ -206,6 +213,20 @@ function startConnect(ch,rawLabel){
     if(r&&!r.ok&&r.message){ alert(r.message); }
     return loadStatus();
   }).then(grid).catch(function(){ st.connecting[k]=null; grid(); });
+}
+
+// 계정 삭제(로컬만) — 이 컴퓨터의 로그인 세션과 받아둔 대화를 지운다. 대시보드로 보낸 과거 대화는 남는다.
+var removing={}; // 삭제 진행 중인 계정(ckey) — 배지를 "삭제 중…"으로 바꾸고 중복 클릭을 막는다.
+function removeAccount(ch,label){
+  if(!confirm("이 계정 연결을 삭제할까요? 이 컴퓨터의 로그인 세션과 받아둔 대화가 지워집니다. (이미 대시보드로 보낸 과거 대화는 남습니다.)")) return;
+  var k=ckey(ch,label);
+  if(removing[k]) return;
+  removing[k]=true; grid(); // 삭제 중 배지
+  api("/api/remove-account",{channel:ch,label:label}).then(function(r){
+    if(r&&!r.ok&&r.message){ alert(r.message); }
+    delete removing[k];
+    return loadStatus();
+  }).then(grid).catch(function(){ delete removing[k]; grid(); });
 }
 
 // ── Email: 구글 OAuth 승인(loopback) ──
@@ -335,6 +356,7 @@ document.addEventListener("click",function(e){
   if(t.dataset.open){ st.adding[t.dataset.open]=true; grid(); return; }
   if(t.dataset.add){ var ch=t.dataset.add; var inp=document.querySelector('.lblinput[data-ch="'+ch+'"]'); startConnect(ch, inp?inp.value:""); return; }
   if(t.dataset.login){ startConnect(t.dataset.login, t.dataset.label||""); return; }
+  if(t.dataset.delCh){ removeAccount(t.dataset.delCh, t.dataset.delLabel||""); return; }
   if(t.dataset.tgphone){ tgSendPhone(t.dataset.tgphone); return; }
   if(t.dataset.tgcode){ tgSendCode(t.dataset.tgcode); return; }
   if(t.dataset.cancel){ stopPanel(); grid(); return; }

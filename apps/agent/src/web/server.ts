@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import qrcode from "qrcode-terminal";
 
-import { addAccount, hasSession, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
+import { addAccount, hasSession, listAccounts, removeAccount, sanitizeLabel, sessionPath } from "../accounts";
 import { AGENT_VERSION, CLOUD_BASE_URL } from "../config";
 import { buildAuthUrl, exchangeCode } from "../connectors/email";
 import { loginInstagram } from "../connectors/instagram";
@@ -265,6 +265,28 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       send(res, 200, { ok: true, started: true });
     } catch (error) {
       send(res, 200, { ok: false, message: error instanceof Error ? error.message : "연결 시작 실패" });
+    }
+    return;
+  }
+
+  // 계정 삭제(로컬만) — 등록부에서 빼고 이 컴퓨터의 세션·받아둔 대화를 지운다. ★서버로는 아무것도 안 감
+  //   (QF 클라우드 channel_connections 정리는 후속 — bpd disconnect + QF RPC 필요, 데이터모델 경계).
+  //   이 엔드포인트도 다른 것과 같이 127.0.0.1 바인딩(startWizard 의 server.listen(PORT, HOST)) 전용.
+  if (req.method === "POST" && url === "/api/remove-account") {
+    const body = await readJson(req);
+    const channel = typeof body.channel === "string" ? body.channel : "";
+    const label = sanitizeLabel(typeof body.label === "string" && body.label ? body.label : "");
+    const exists = (await listAccounts()).some((a) => a.channel === channel && a.label === label);
+    if (!exists) {
+      send(res, 200, { ok: false, message: "이미 삭제되었거나 등록되지 않은 계정입니다." });
+      return;
+    }
+    try {
+      await removeAccount(channel, label); // 등록부 + 세션 폴더 + 받아둔 대화 파일 삭제
+      connectState.delete(ckey(channel, label)); // 진행중 상태가 남아 있으면 함께 제거
+      send(res, 200, { ok: true });
+    } catch (error) {
+      send(res, 200, { ok: false, message: error instanceof Error ? error.message : "삭제 실패" });
     }
     return;
   }
