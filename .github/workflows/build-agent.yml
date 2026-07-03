@@ -5,6 +5,9 @@ name: build-agent
 
 on:
   push:
+    # main 브랜치 push 만(태그 push 는 제외 — 릴리스 태그 push 가 version 입력 없는
+    # 스트레이 빌드를 만들어 릴리스 스크립트가 엉뚱한 런을 잡던 문제를 막는다).
+    branches: [main]
     paths:
       - "apps/agent/**"
       - "packages/**"

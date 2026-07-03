@@ -44,21 +44,35 @@ fi
 
 echo "▶ 2) build-agent CI (version=$TAG 주입)"
 gh workflow run build-agent.yml --ref "$TAG" --field version="$TAG"
-sleep 5
-RUN_ID=$(gh run list --workflow=build-agent.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-echo "  run $RUN_ID — 완료 대기(수 분)"; gh run watch "$RUN_ID" --exit-status
+# ★우리가 방금 띄운 workflow_dispatch 런을 정확히 잡는다. 태그 force-push 가 유발하는
+#   push 런(version 입력 없음 → git describe 폴백 → Windows 에서 'dev')을 잡지 않도록
+#   --event workflow_dispatch + --branch <tag> 로 좁힌다. (지난 실패의 원인이 이거였다.)
+echo "  dispatch 런 등록 대기..."
+RUN_ID=""
+for _ in $(seq 1 20); do
+  sleep 3
+  RUN_ID=$(gh run list --workflow=build-agent.yml --event workflow_dispatch --branch "$TAG" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+  [ -n "$RUN_ID" ] && break
+done
+[ -z "$RUN_ID" ] && { echo "  ✗ dispatch 런을 찾지 못함 — GitHub Actions 를 확인하세요"; exit 1; }
+echo "  run $RUN_ID (workflow_dispatch, ref=$TAG) — 완료 대기(수 분)"; gh run watch "$RUN_ID" --exit-status
 
 echo "▶ 3) 아티팩트 다운로드 + zip"
 WORK=$(mktemp -d)
 gh run download "$RUN_ID" -n qualiflow-agent-macOS   -D "$WORK/macos"
 gh run download "$RUN_ID" -n qualiflow-agent-Windows -D "$WORK/win"
 
-echo "▶ 4) 버전 스탬프 검증"
-STAMP=$(grep -rho "QUALIFLOW_AGENT_VERSION=[0-9.]*" "$WORK/macos" | head -1 | cut -d= -f2 || true)
-if [ "$STAMP" != "$VER" ]; then
-  echo "  ✗ 번들 버전 '$STAMP' (기대 $VER) — 릴리스 중단."; exit 1
+echo "▶ 4) 버전 스탬프 검증 (mac·win 둘 다)"
+# run.cmd 의 맨값(set "QUALIFLOW_AGENT_VERSION=X.Y.Z")에서 버전 추출.
+# ★run.sh 는 ${VAR:-X.Y.Z} 기본값문법이라 파싱이 애매 → 두 번들 공통인 run.cmd 로 확인.
+# ★mac·win 둘 다 검사: 지난 실패 때 mac=0.3.1 인데 win='dev' 였음(잘못된 런) — 한쪽만 보면 못 잡는다.
+stamp_of() { grep -rhoE 'QUALIFLOW_AGENT_VERSION=[0-9]+\.[0-9]+\.[0-9]+' "$1/package/run.cmd" 2>/dev/null | head -1 | cut -d= -f2; }
+MAC_STAMP=$(stamp_of "$WORK/macos"); WIN_STAMP=$(stamp_of "$WORK/win")
+if [ "$MAC_STAMP" != "$VER" ] || [ "$WIN_STAMP" != "$VER" ]; then
+  echo "  ✗ 번들 버전 불일치 (mac='$MAC_STAMP', win='$WIN_STAMP', 기대 $VER) — 릴리스 중단."
+  echo "    win 이 'dev'/빈값이면 version 입력 없는 런을 받은 것 → 재실행하면 dispatch 런을 잡습니다."; exit 1
 fi
-echo "  ✓ 번들 버전 = $STAMP"
+echo "  ✓ 번들 버전 = mac:$MAC_STAMP · win:$WIN_STAMP"
 ( cd "$WORK/macos" && zip -qr "$WORK/qualiflow-agent-macOS.zip" . )
 ( cd "$WORK/win"   && zip -qr "$WORK/qualiflow-agent-Windows.zip" . )
 
