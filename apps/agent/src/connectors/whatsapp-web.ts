@@ -17,7 +17,7 @@
 
 import { chromium, type Browser, type Page } from "playwright-core";
 
-import { delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
+import { CHROME_NOT_FOUND_MESSAGE, delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
 
 // ★빈 포트를 새로 받아 쓴다(고정 X) — instagram/alibaba 도 findFreePort 라, 동시에 떠도 충돌 안 나게.
 const WA_WEB_URL = "https://web.whatsapp.com/";
@@ -43,7 +43,7 @@ async function withWhatsAppWebPage<T>(
 ): Promise<T> {
   const chromePath = await findChrome();
   if (!chromePath) {
-    throw new Error("Chrome 실행파일을 찾지 못했습니다. 데스크톱 Chrome 설치가 필요합니다.");
+    throw new Error(CHROME_NOT_FOUND_MESSAGE);
   }
   const port = await findFreePort();
   const chrome = spawnChrome(chromePath, profileDir, port, WA_WEB_URL, {

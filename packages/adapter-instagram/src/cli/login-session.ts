@@ -141,7 +141,9 @@ async function writeConnectionStatus(status: "active" | "needs_relogin", detail:
 
 const chromePath = await findChrome();
 if (!chromePath) {
-  console.error("Chrome executable was not found. Set CHROME_PATH to the Chrome binary path.");
+  console.error(
+    "Chrome or Edge browser was not found. Install either one (Windows ships with Edge). If one is already installed, set CHROME_PATH to its executable path."
+  );
   process.exit(1);
 }
 

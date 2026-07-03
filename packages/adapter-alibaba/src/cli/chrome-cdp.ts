@@ -23,7 +23,12 @@ const CHROME_CANDIDATES = [
   process.env["PROGRAMFILES(X86)"] && `${process.env["PROGRAMFILES(X86)"]}\\Microsoft\\Edge\\Application\\msedge.exe`
 ].filter((value): value is string => Boolean(value));
 
-// 크롬 실행파일을 후보들에서 찾는다(없으면 null → 호출부에서 CHROME_PATH 안내).
+// 크롬을 못 찾았을 때 모든 호출부가 쓰는 공통 안내(비개발자용). Chrome/Edge 어느 쪽도 못 찾은
+// 상황이므로 "둘 중 하나 설치"를 먼저 권하고, 이미 깔려 있는데 못 찾는 드문 경우만 CHROME_PATH를 언급.
+export const CHROME_NOT_FOUND_MESSAGE =
+  "Chrome 또는 Edge 브라우저를 찾지 못했습니다. 둘 중 하나를 설치해 주세요(Windows는 Edge가 기본 설치되어 있습니다). 이미 설치돼 있는데도 이 오류가 난다면 CHROME_PATH 환경변수에 실행파일 경로를 지정하세요.";
+
+// 크롬 실행파일을 후보들에서 찾는다(없으면 null → 호출부에서 CHROME_NOT_FOUND_MESSAGE 안내).
 export async function findChrome(): Promise<string | null> {
   for (const candidate of CHROME_CANDIDATES) {
     try {

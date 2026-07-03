@@ -14,7 +14,7 @@ import { resolve } from "node:path";
 
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 
-import { delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
+import { CHROME_NOT_FOUND_MESSAGE, delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
 const DEBUG_PORT = 9222;
@@ -89,7 +89,7 @@ export async function sendAlibaba(profileDir: string, conversation: string, text
   const cookiesFile = `${profileDir}.cookies.json`;
   const chromePath = await findChrome();
   if (!chromePath) {
-    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH로 지정하세요.");
+    throw new Error(CHROME_NOT_FOUND_MESSAGE);
   }
 
   const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, ONETALK_URL, { offscreen: true });

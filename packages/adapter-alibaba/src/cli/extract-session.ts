@@ -16,7 +16,7 @@ import { dirname, resolve } from "node:path";
 import { chromium, type BrowserContext, type Page, type Response } from "playwright-core";
 
 import type { AlibabaBuyerActivity, AlibabaRawConversation } from "../raw-types";
-import { dataFile, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
+import { CHROME_NOT_FOUND_MESSAGE, dataFile, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 // ────────────────────────────────────────────────────────────────────────
 // 🔎 주문 카운트(#5)·고객 활동(#7) JSONP 캡처(진단/배선 준비 — 매핑은 보류).
@@ -511,7 +511,7 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
   const cookiesFile = `${profileDir}.cookies.json`; // login이 백업한 세션 쿠키
   const chromePath = await findChrome();
   if (!chromePath) {
-    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
+    throw new Error(CHROME_NOT_FOUND_MESSAGE);
   }
 
   // 자동화 플래그 없는 "그냥 크롬" + inquiry:login 이 만든 영구 프로필(화면 밖).

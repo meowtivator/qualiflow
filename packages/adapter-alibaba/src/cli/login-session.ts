@@ -22,7 +22,7 @@ import { dirname, resolve } from "node:path";
 
 import { chromium } from "playwright-core";
 
-import { dataFile, delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "./chrome-cdp";
+import { CHROME_NOT_FOUND_MESSAGE, dataFile, delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 // 설치본에선 QUALIFLOW_HOME/.data 로, 개발에선 레포 apps/web/.data 로 떨어진다(cwd-상대 버그 제거).
 const CONNECTION_STATUS_FILE = dataFile("alibaba-connection.json");
@@ -113,7 +113,7 @@ export async function loginAlibaba(profileDir: string): Promise<void> {
   const cookiesFile = `${profileDir}.cookies.json`; // 세션 쿠키 백업(★서버로 안 감, 프로필 옆 로컬)
   const chromePath = await findChrome();
   if (!chromePath) {
-    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
+    throw new Error(CHROME_NOT_FOUND_MESSAGE);
   }
 
   await mkdir(profileDir, { recursive: true });

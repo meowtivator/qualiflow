@@ -3,6 +3,7 @@
 // No framework on purpose (ponytail). Mirrors the builder in chrome-cdp.ts; if that list
 // changes shape, update here too.
 import assert from "node:assert/strict";
+import { CHROME_NOT_FOUND_MESSAGE } from "./chrome-cdp";
 
 function buildCandidates(env: NodeJS.ProcessEnv): string[] {
   return [
@@ -40,5 +41,9 @@ assert.ok(
   winList.findIndex((p) => p.includes("chrome.exe")) < winList.findIndex((p) => p.includes("msedge.exe")),
   "Edge should be a fallback after Chrome"
 );
+
+// The shared not-found message must name both browsers so a non-developer knows what to install.
+assert.ok(CHROME_NOT_FOUND_MESSAGE.includes("Chrome"), "not-found message should mention Chrome");
+assert.ok(CHROME_NOT_FOUND_MESSAGE.includes("Edge"), "not-found message should mention Edge");
 
 console.log("chrome-cdp candidates self-check OK");

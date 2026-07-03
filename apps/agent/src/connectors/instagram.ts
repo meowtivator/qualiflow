@@ -5,7 +5,7 @@
 //     진짜 웹 세션이라 모바일 사칭 API보다 계정 정지 위험이 낮다.
 //   - 세션은 영구 프로필(.auth/instagram[--label])에 로컬 저장(★서버로 안 감).
 
-import { delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
+import { CHROME_NOT_FOUND_MESSAGE, delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
 import type { MessageAttachment } from "@qualiflow/core";
 import { chromium, type Page } from "playwright-core";
@@ -117,7 +117,7 @@ async function withInstagramPage<T>(
 ): Promise<T> {
   const chromePath = await findChrome();
   if (!chromePath) {
-    throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
+    throw new Error(CHROME_NOT_FOUND_MESSAGE);
   }
   // ★빈 포트를 새로 받아 쓴다(9223 고정 X) — 백그라운드 fetch 와 로그인이 겹쳐도 포트 충돌이 없게(alibaba와 동일).
   const port = await findFreePort();
