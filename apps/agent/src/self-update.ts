@@ -150,29 +150,47 @@ async function startWindowsApply(installerDir: string, work: string): Promise<bo
 //   packageDir 를 따옴표로 감싸 공백 경로도 안전하게. 대상은 %LOCALAPPDATA%\QualiFlow(install.bat 과 동일).
 export function buildApplyBat(packageDir: string): string {
   const CRLF = "\r\n";
+  // ★모든 단계를 로그 파일에 남긴다. 이 배치는 detached(stdio:ignore)로 상주가 꺼진 뒤 도는데,
+  //   조용히 실패하면(xcopy 락 10회 초과·재시작 실패) 화면에도 stdout 에도 흔적이 안 남는다 →
+  //   %USERPROFILE%\.qualiflow\logs\self-update.log 로 남겨 사후에 원인을 볼 수 있게 한다.
+  //   ★배치 안전: echo/rem 텍스트에 괄호 '()' 를 넣지 않는다(과거 if 블록 조기종료 회귀). 리다이렉트
+  //   앞에는 공백을 둔다(줄 끝 숫자+'>>' 가 파일핸들 리다이렉트로 오해되는 것 방지).
+  const LOGDIR = "%USERPROFILE%\\.qualiflow\\logs";
+  const LOG = `${LOGDIR}\\self-update.log`;
   return [
     "@echo off",
     "rem QualiFlow 무음 업데이터 — 상주 3개 정지 → 핸들 해제 대기 → 새 package 덮어쓰기 → 재시작.",
-    "rem (self-update.ts 가 검증된 다운로드에서만 생성한다. 대화형 install.bat 을 대체하지 않고 핵심만 재현.)",
-    'schtasks /End /TN "QualiFlow Agent"  >nul 2>&1',
-    'schtasks /End /TN "QualiFlow Serve"  >nul 2>&1',
-    'schtasks /End /TN "QualiFlow Wizard" >nul 2>&1',
+    "rem self-update.ts 가 검증된 다운로드에서만 생성한다. 대화형 install.bat 을 대체하지 않고 핵심만 재현.",
+    `if not exist "${LOGDIR}" mkdir "${LOGDIR}"`,
+    `echo ==== self-update %DATE% %TIME% ====  >>"${LOG}"`,
+    `echo [1/3] stopping resident tasks  >>"${LOG}"`,
+    `schtasks /End /TN "QualiFlow Agent"   >>"${LOG}" 2>&1`,
+    `schtasks /End /TN "QualiFlow Serve"   >>"${LOG}" 2>&1`,
+    `schtasks /End /TN "QualiFlow Wizard"  >>"${LOG}" 2>&1`,
+    "rem 작업 정지만으로는 자식 node.exe 가 살아남아 파일락을 붙잡으면 xcopy 가 공유 위반으로 실패한다.",
+    "rem   설치폴더 경로로 표적 종료 → 다른 Node 앱은 안 건드린다. 생성된 파일이라 PowerShell 사용이 안전.",
+    `echo   killing leftover QualiFlow node.exe to free the file lock  >>"${LOG}"`,
+    `powershell -NoProfile -Command "Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*\\QualiFlow\\*' } | Stop-Process -Force"  >>"${LOG}" 2>&1`,
     "ping 127.0.0.1 -n 3 >nul",
-    "rem 상주가 잡고 있던 node.exe 핸들이 풀릴 때까지 xcopy 를 최대 10회(≈30초) 재시도한다.",
-    "rem   한 번만 복사하면 락이 안 풀린 순간 일부 파일이 누락돼 '부분 교체'로 설치가 깨진다.",
-    "rem   errorlevel 0(성공)이면 즉시 재시작으로, 10회 실패면 best-effort 재시작(상주가 죽은 채 남지 않게).",
+    "rem 상주가 잡고 있던 node.exe 핸들이 풀릴 때까지 xcopy 를 최대 10회, 약 30초 내에서 재시도한다.",
+    "rem   한 번만 복사하면 락이 안 풀린 순간 일부 파일이 누락돼 부분 교체로 설치가 깨진다.",
+    "rem   errorlevel 0 성공이면 즉시 재시작으로, 10회 실패면 best-effort 재시작으로 상주가 죽은 채 남지 않게.",
+    `echo [2/3] copying new package, retry up to 10x if node.exe still locked  >>"${LOG}"`,
     "set /a QF_TRY=0",
     ":qf_copy",
-    `xcopy "${packageDir}\\*" "%LOCALAPPDATA%\\QualiFlow\\" /E /I /Y >nul`,
+    `xcopy "${packageDir}\\*" "%LOCALAPPDATA%\\QualiFlow\\" /E /I /Y  >>"${LOG}" 2>&1`,
     "if not errorlevel 1 goto qf_copied",
     "set /a QF_TRY+=1",
+    `echo   xcopy attempt %QF_TRY% failed, waiting then retry  >>"${LOG}"`,
     "if %QF_TRY% geq 10 goto qf_copied",
     "ping 127.0.0.1 -n 4 >nul",
     "goto qf_copy",
     ":qf_copied",
-    'schtasks /Run /TN "QualiFlow Agent"  >nul 2>&1',
-    'schtasks /Run /TN "QualiFlow Serve"  >nul 2>&1',
-    'schtasks /Run /TN "QualiFlow Wizard" >nul 2>&1'
+    `echo [3/3] restarting resident tasks after %QF_TRY% retries  >>"${LOG}"`,
+    `schtasks /Run /TN "QualiFlow Agent"   >>"${LOG}" 2>&1`,
+    `schtasks /Run /TN "QualiFlow Serve"   >>"${LOG}" 2>&1`,
+    `schtasks /Run /TN "QualiFlow Wizard"  >>"${LOG}" 2>&1`,
+    `echo ==== self-update finished ====  >>"${LOG}"`
   ].join(CRLF) + CRLF;
 }
 
