@@ -124,7 +124,10 @@ async function withInstagramPage<T>(
   const chrome = spawnChrome(chromePath, profileDir, port, INBOX_URL, { offscreen: options.offscreen });
   try {
     if (!(await waitForCdp(port))) {
-      throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 있으면 닫고 다시 시도하세요.");
+      throw new Error(
+        "크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 있으면 닫고 다시 시도하세요. " +
+          "(원인을 보려면 QUALIFLOW_DEBUG_CHROME=1 로 다시 실행하면 크롬 오류가 표시됩니다.)"
+      );
     }
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     try {
