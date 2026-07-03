@@ -515,7 +515,19 @@ export async function startWizard(options: { open?: boolean } = {}): Promise<voi
       if (!res.headersSent) send(res, 500, { ok: false, message: "서버 오류" });
     });
   });
-  await new Promise<void>((resolve) => server.listen(PORT, HOST, resolve));
+  // 포트 충돌 방어(EADDRINUSE): 이미 다른 마법사 인스턴스가 4317 을 서빙 중이면 크래시하지 않고
+  // 조용히 정상 종료(exit 0). 상주 서비스가 재시작 루프로 크래시 로그를 쏟아내는 것을 막는다.
+  // 그 외 리슨 에러는 삼키지 않고 그대로 throw(reject) 해 진짜 문제는 드러낸다.
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        console.log(`🪄 마법사가 이미 ${HOST}:${PORT} 에서 실행 중입니다 — 이 인스턴스는 종료합니다.`);
+        process.exit(0);
+      }
+      reject(err);
+    });
+    server.listen(PORT, HOST, resolve);
+  });
   const target = `http://${HOST}:${PORT}`;
   console.log(`🪄 설치 마법사: ${target}`);
   console.log(`   클라우드: ${CLOUD_BASE_URL}`);
