@@ -77,10 +77,28 @@ exec "$DIR/node" "$DIR/agent.mjs" "$@"
 if (process.platform !== "win32") {
   chmodSync(resolve(out, "run.sh"), 0o755);
 }
+// CLOUD_URL/AGENT_VERSION 는 런처 문자열에 그대로 보간되므로 최소 형식검증(따옴표·개행·% 주입 차단).
+assertLauncherSafe("QUALIFLOW_CLOUD_URL", CLOUD_URL);
+assertLauncherSafe("QUALIFLOW_AGENT_VERSION", AGENT_VERSION);
 writeFileSync(
   resolve(out, "run.cmd"),
-  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not defined QUALIFLOW_CLOUD_URL set "QUALIFLOW_CLOUD_URL=${CLOUD_URL}"\r\nif not defined QUALIFLOW_AGENT_VERSION set "QUALIFLOW_AGENT_VERSION=${AGENT_VERSION}"\r\nif not defined QUALIFLOW_WATCH_INTERVAL_MS set "QUALIFLOW_WATCH_INTERVAL_MS=60000"\r\nif not defined TELEGRAM_API_ID set "TELEGRAM_API_ID=${TG_API_ID}"\r\nif not defined TELEGRAM_API_HASH set "TELEGRAM_API_HASH=${TG_API_HASH}"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
+  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not defined QUALIFLOW_CLOUD_URL set "QUALIFLOW_CLOUD_URL=${CLOUD_URL}"\r\nif not defined QUALIFLOW_AGENT_VERSION set "QUALIFLOW_AGENT_VERSION=${AGENT_VERSION}"\r\nif not defined QUALIFLOW_WATCH_INTERVAL_MS set "QUALIFLOW_WATCH_INTERVAL_MS=60000"\r\nif not defined TELEGRAM_API_ID set "TELEGRAM_API_ID=${TG_API_ID}"\r\nif not defined TELEGRAM_API_HASH set "TELEGRAM_API_HASH=${TG_API_HASH}"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\nif not exist "%~dp0node.exe" (\r\n  echo [오류] node.exe 가 없습니다 - 백신이 격리했을 수 있습니다. 설치 폴더를 백신 예외에 추가하고 다시 설치하세요.\r\n  pause\r\n  exit /b 1\r\n)\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
 );
+
+// 창 없는 런처 — schtasks TR 이 `wscript run-hidden.vbs run.cmd <cmd>` 로 부른다. Run(...,0,False)=창숨김.
+// 첫 인자=실행할 배치 경로, 둘째 인자=그 배치에 넘길 명령(watch/serve/wizard).
+writeFileSync(
+  resolve(out, "run-hidden.vbs"),
+  `CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """ " & WScript.Arguments(1), 0, False\r\n`
+);
+
+// 런처(run.cmd)에 문자열로 박히는 값은 따옴표/개행/%/캐럿이 들어오면 배치 문법을 깨거나 명령 주입이 된다.
+// URL·버전에 정상적으로 나올 수 없는 문자만 거부(빌드 시점 방어).
+function assertLauncherSafe(name, value) {
+  if (/["\r\n%^&|<>]/.test(value)) {
+    throw new Error(`${name} 값에 런처에 넣을 수 없는 문자가 있습니다: ${JSON.stringify(value)}`);
+  }
+}
 
 // 릴리스 태그 → 버전 문자열. env(CI) 우선, 없으면 로컬 git 태그, 둘 다 없으면 "dev".
 function resolveAgentVersion() {
