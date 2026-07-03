@@ -282,7 +282,14 @@ export async function listChannelThreads(channel: string, label: string): Promis
 }
 
 // 채널별 발송 라우터. recipient = "me"(나에게 — 텔레/왓츠앱) | 불러온 대화의 threadId(실제 채팅방).
-export async function sendMessage(channel: string, label: string, recipient: string, text: string): Promise<void> {
+//   threadId(옵션): 이메일 회신을 원본 스레드에 정확히 붙일 때 쓴다(다른 채널은 무시 — recipient 로 충분).
+export async function sendMessage(
+  channel: string,
+  label: string,
+  recipient: string,
+  text: string,
+  threadId?: string
+): Promise<void> {
   switch (channel) {
     case "telegram":
       return sendTelegram(sessionPath("telegram", label), recipient, text);
@@ -302,7 +309,7 @@ export async function sendMessage(channel: string, label: string, recipient: str
       if (recipient === "me") {
         throw new Error("이메일은 'me' 발송이 없습니다. 불러온 대화의 threadId(상대 이메일 주소)를 쓰세요.");
       }
-      return sendEmail(sessionPath("email", label), recipient, text);
+      return sendEmail(sessionPath("email", label), recipient, text, threadId);
     default:
       throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram, email.`);
   }

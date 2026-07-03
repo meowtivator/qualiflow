@@ -278,9 +278,16 @@ function pollTgState(label){
     if(!st.panel||st.panel.ch!=="telegram"){ clearInterval(panelTimer); panelTimer=null; return; }
     api("/api/tg-state?label="+encodeURIComponent(label)).then(function(r){
       if(!st.panel) return;
-      if(r.error){ st.panel.mode="phone"; st.panel.extra={error:r.error}; grid(); if(panelTimer){clearInterval(panelTimer);panelTimer=null;} return; }
+      // 코드 오류(만료/오타)는 회복 가능 — 코드 패널에 그대로 머물며 에러만 보여주고 계속 폴링한다
+      //   (사용자가 새 코드를 넣으면 그대로 재시도). stage==="error"(2FA 등 회복 불가)만 처음으로 되돌린다.
+      if(r.stage==="error"){ st.panel.mode="phone"; st.panel.extra={error:r.error}; grid(); if(panelTimer){clearInterval(panelTimer);panelTimer=null;} return; }
       if(r.stage==="done"){ stopPanel(); loadStatus().then(function(){ render(); }); return; }
-      if(r.stage==="code" && st.panel.mode!=="code"){ st.panel.mode="code"; st.panel.extra={}; grid(); }
+      if(r.stage==="code"){
+        if(st.panel.mode!=="code"){ st.panel.mode="code"; st.panel.extra={}; }
+        // 코드 단계 에러(PHONE_CODE_INVALID 등)를 코드 패널에 인라인 표시. 값이 바뀔 때만 다시 그린다.
+        var cur=(st.panel.extra&&st.panel.extra.error)||"";
+        if((r.error||"")!==cur){ st.panel.extra={error:r.error||""}; grid(); }
+      }
     });
   },1500);
 }

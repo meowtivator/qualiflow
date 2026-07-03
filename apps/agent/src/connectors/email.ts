@@ -253,17 +253,36 @@ export async function fetchEmail(sessionDir: string): Promise<ChatRawConversatio
 // ── send ──
 // 답장을 같은 Gmail 스레드에 넣는다. recipient = 불러온 대화의 contactId(=상대 이메일 주소).
 //   In-Reply-To/References 헤더로 스레드를 유지하고, threadId 로 Gmail 스레드에 붙인다.
-export async function sendEmail(sessionDir: string, recipient: string, text: string): Promise<void> {
+//   ★threadId 를 받으면(웹 답장이 원본 스레드를 실어 보낼 때) 그 스레드에 정확히 회신한다. 없으면
+//   상대 주소로 '가장 최근' 메일을 찾는 근사 방식으로 폴백한다(같은 상대와 스레드가 여러 개면
+//   최근 것이 아닐 수 있어 오배송 가능 — threadId 를 실으면 이 한계가 사라진다).
+export async function sendEmail(
+  sessionDir: string,
+  recipient: string,
+  text: string,
+  threadId?: string
+): Promise<void> {
   const { accessToken, email: myEmail } = await getAccessToken(sessionDir);
   const auth = { authorization: `Bearer ${accessToken}` };
 
-  // 상대 주소로 최근 스레드를 찾아 threadId + Message-Id(References용) + Subject 를 얻는다.
-  const q = encodeURIComponent(`from:${recipient} OR to:${recipient}`);
-  const searchRes = await fetch(`${GMAIL_API}/messages?q=${q}&maxResults=1`, { headers: auth });
-  const search = (await searchRes.json().catch(() => ({}))) as { messages?: { id?: string }[] };
-  const lastId = search.messages?.[0]?.id;
+  // 회신 대상 메일 하나를 고른다: threadId 가 있으면 그 스레드의 최신 메일, 없으면 상대 주소로 검색.
+  let lastId: string | undefined;
+  if (threadId) {
+    // 스레드의 메일 목록 → 마지막(최신) 메일을 In-Reply-To 기준으로 삼는다.
+    const threadRes = await fetch(`${GMAIL_API}/threads/${threadId}?format=minimal`, { headers: auth });
+    if (threadRes.ok) {
+      const thread = (await threadRes.json().catch(() => ({}))) as { messages?: { id?: string }[] };
+      lastId = thread.messages?.[thread.messages.length - 1]?.id;
+    }
+  } else {
+    // 폴백: 상대 주소로 최근 스레드를 찾는다(정확도 한계 — 위 주석 참고).
+    const q = encodeURIComponent(`from:${recipient} OR to:${recipient}`);
+    const searchRes = await fetch(`${GMAIL_API}/messages?q=${q}&maxResults=1`, { headers: auth });
+    const search = (await searchRes.json().catch(() => ({}))) as { messages?: { id?: string }[] };
+    lastId = search.messages?.[0]?.id;
+  }
 
-  let threadId: string | undefined;
+  let replyThreadId: string | undefined = threadId;
   let subject = "";
   let inReplyTo = "";
   if (lastId) {
@@ -272,7 +291,7 @@ export async function sendEmail(sessionDir: string, recipient: string, text: str
     });
     if (msgRes.ok) {
       const msg = (await msgRes.json()) as GmailMessage;
-      threadId = msg.threadId;
+      replyThreadId = msg.threadId ?? replyThreadId;
       subject = header(msg.payload?.headers, "Subject");
       inReplyTo = header(msg.payload?.headers, "Message-Id");
     }
@@ -296,7 +315,7 @@ export async function sendEmail(sessionDir: string, recipient: string, text: str
   const sendRes = await fetch(`${GMAIL_API}/messages/send`, {
     method: "POST",
     headers: { ...auth, "content-type": "application/json" },
-    body: JSON.stringify(threadId ? { raw, threadId } : { raw })
+    body: JSON.stringify(replyThreadId ? { raw, threadId: replyThreadId } : { raw })
   });
   if (!sendRes.ok) {
     const err = await sendRes.text().catch(() => "");

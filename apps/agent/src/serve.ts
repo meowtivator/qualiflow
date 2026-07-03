@@ -15,6 +15,7 @@ type AgentCommand = {
     accountLabel?: string;
     recipient?: string;
     text?: string;
+    threadId?: string; // 이메일 회신을 원본 스레드에 붙일 때(bpd send 라우트가 실어 보내면 사용, 없으면 근사 폴백)
   };
 };
 
@@ -56,13 +57,13 @@ async function executeCommand(command: AgentCommand): Promise<void> {
     await reportResult(command.id, "failed", { error: `알 수 없는 명령 타입: ${command.type}` });
     return;
   }
-  const { channel, accountLabel, recipient, text } = command.payload;
+  const { channel, accountLabel, recipient, text, threadId } = command.payload;
   if (!channel || !accountLabel || !recipient || !text) {
     await reportResult(command.id, "failed", { error: "payload가 불완전합니다." });
     return;
   }
   try {
-    await sendMessage(channel, accountLabel, recipient, text);
+    await sendMessage(channel, accountLabel, recipient, text, threadId);
     await reportResult(command.id, "done", { sent: true });
     console.log(`  ✅ 발송 완료 (${channel}/${accountLabel} → ${recipient})`);
   } catch (error) {

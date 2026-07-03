@@ -17,10 +17,9 @@
 
 import { chromium, type Browser, type Page } from "playwright-core";
 
-import { delay, findChrome, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
+import { delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
 
-// instagram(9223)/alibaba(9223)와 겹치지 않는 별도 CDP 포트 — 동시에 떠도 충돌 안 나게.
-const DEBUG_PORT = Number(process.env.QUALIFLOW_WA_WEB_PORT) || 9224;
+// ★빈 포트를 새로 받아 쓴다(고정 X) — instagram/alibaba 도 findFreePort 라, 동시에 떠도 충돌 안 나게.
 const WA_WEB_URL = "https://web.whatsapp.com/";
 // 로그인(채팅 목록) 또는 QR 가 나타날 때까지 기다리는 상한(첫 페어링은 사람이 스캔할 시간 필요).
 const READY_TIMEOUT_MS = Number(process.env.QUALIFLOW_WA_WEB_READY_MS) || 3 * 60_000;
@@ -46,15 +45,16 @@ async function withWhatsAppWebPage<T>(
   if (!chromePath) {
     throw new Error("Chrome 실행파일을 찾지 못했습니다. 데스크톱 Chrome 설치가 필요합니다.");
   }
-  const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, WA_WEB_URL, {
+  const port = await findFreePort();
+  const chrome = spawnChrome(chromePath, profileDir, port, WA_WEB_URL, {
     offscreen: options.offscreen ?? false
   });
   let browser: Browser | undefined;
   try {
-    if (!(await waitForCdp(DEBUG_PORT))) {
-      throw new Error(`CDP 포트 ${DEBUG_PORT}가 열리지 않았습니다(Chrome 기동 실패).`);
+    if (!(await waitForCdp(port))) {
+      throw new Error(`CDP 포트 ${port}가 열리지 않았습니다(Chrome 기동 실패).`);
     }
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     // spawnChrome 가 이미 WA_WEB_URL 로 연 페이지를 집는다(없으면 새로 연다).
     const context = browser.contexts()[0] ?? (await browser.newContext());
     const page = context.pages()[0] ?? (await context.newPage());

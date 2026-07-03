@@ -57,7 +57,9 @@ export type TelegramAuthPrompts = {
   phoneNumber: () => Promise<string>;
   phoneCode: () => Promise<string>;
   password: () => Promise<string>;
-  onError?: (err: Error) => void;
+  // 반환값이 truthy면 gramjs 로그인 루프(while(1))가 멈추고 loginTelegram 이 reject 된다(auth.js).
+  // 코드 오류처럼 재시도 가능한 실패는 falsy 를 돌려 루프를 유지, 회복 불가(2FA 등)는 truthy 로 끊는다.
+  onError?: (err: Error) => boolean | void;
 };
 
 // 전화 코드 로그인. prompts를 주면 그 값으로(웹), 안 주면 readline(터미널). 세션을 sessionDir 에 저장한다.
@@ -71,7 +73,9 @@ export async function loginTelegram(sessionDir: string, prompts?: TelegramAuthPr
       phoneNumber: prompts.phoneNumber,
       phoneCode: prompts.phoneCode,
       password: prompts.password,
-      onError: (err) => prompts.onError?.(err instanceof Error ? err : new Error(String(err)))
+      // async 래퍼: gramjs 는 onError 반환을 await 해 truthy면 로그인 루프를 멈춘다(Promise<boolean> 기대).
+      //   Boolean(...) 로 void/undefined 를 false 로 좁힌다(콜백이 값을 안 주면 = 루프 계속).
+      onError: async (err) => Boolean(prompts.onError?.(err instanceof Error ? err : new Error(String(err))))
     });
   } else {
     // CLI 흐름: 터미널에서 물어본다(기존 동작).
