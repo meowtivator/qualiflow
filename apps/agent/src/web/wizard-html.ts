@@ -153,11 +153,15 @@ function grid(){
   $("grid").innerHTML=Object.keys(CH).map(function(ch){
     var c=CH[ch], accts=acctsOf(ch);
     var rows=accts.map(function(a){
-      // 서버 로그인 상태가 있으면 그걸 우선 표시(로그인 중/실패). 없으면 등록됨=연결됨.
+      // 배지 = 실제 상태. 진행중/실패(서버 connectState) 우선, 그 다음 실제 세션(a.connected).
+      // ★핵심: 라벨만 등록되고 로그인 안 됐으면(연결 안 됨) "연결됨"이 아니라 "로그인 필요" 버튼을 보여
+      //   준다 — 눌러서 그 라벨로 바로 로그인(startConnect). (예전엔 등록만 돼도 "연결됨"으로 속였다.)
       var cs=st.serverConnect[sckey(ch,a.label)];
-      var badge='<span class="badge ok">\\u2713 연결됨</span>';
+      var badge;
       if(cs&&cs.status==="connecting"){ badge='<span class="badge warn">로그인 창 여는 중\\u2026</span>'; }
-      else if(cs&&cs.status==="error"){ badge='<span class="badge warn" title="'+esc(cs.message||"")+'">로그인 실패 — 다시 시도</span>'; }
+      else if(cs&&cs.status==="error"){ badge='<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer" title="'+esc(cs.message||"")+'">로그인 실패 \\u2014 다시 로그인</button>'; }
+      else if(a.connected){ badge='<span class="badge ok">\\u2713 연결됨</span>'; }
+      else { badge='<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer">로그인 필요 \\u2014 지금 로그인</button>'; }
       return '<div class="acct"><span class="ann">'+esc(a.label)+'</span>'+badge+'</div>';
     });
     var busyNote=false;
@@ -330,6 +334,7 @@ document.addEventListener("click",function(e){
   }
   if(t.dataset.open){ st.adding[t.dataset.open]=true; grid(); return; }
   if(t.dataset.add){ var ch=t.dataset.add; var inp=document.querySelector('.lblinput[data-ch="'+ch+'"]'); startConnect(ch, inp?inp.value:""); return; }
+  if(t.dataset.login){ startConnect(t.dataset.login, t.dataset.label||""); return; }
   if(t.dataset.tgphone){ tgSendPhone(t.dataset.tgphone); return; }
   if(t.dataset.tgcode){ tgSendCode(t.dataset.tgcode); return; }
   if(t.dataset.cancel){ stopPanel(); grid(); return; }
