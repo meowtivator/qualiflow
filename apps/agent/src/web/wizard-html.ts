@@ -91,7 +91,8 @@ var CH={
 };
 // 채널별 웹 로그인 방식: window=창(alibaba/instagram) / qr=WhatsApp QR / phone=Telegram 전화+코드.
 var FLOW={alibaba:"window",instagram:"window",whatsapp:"qr",telegram:"phone"};
-var st={step:0,paired:false,accounts:[],connecting:{},adding:{},panel:null};
+// serverConnect = 서버가 준 창-로그인(alibaba/instagram) 진행 상태(connecting/done/error). grid()가 배지로 표시.
+var st={step:0,paired:false,accounts:[],connecting:{},adding:{},panel:null,serverConnect:{}};
 // panel = {ch, label, mode} — 현재 열려있는 로그인 패널(qr 또는 phone/code). 폴링 타이머는 panelTimer.
 var panelTimer=null;
 
@@ -102,7 +103,9 @@ function acctsOf(ch){ return st.accounts.filter(function(a){return a.channel===c
 function ckey(ch,label){ return ch+"\\u0000"+label; }
 function totalAccounts(){ return st.accounts.length; }
 
-function loadStatus(){ return api("/api/status").then(function(s){ st.paired=!!s.paired; st.accounts=s.accounts||[]; }); }
+function loadStatus(){ return api("/api/status").then(function(s){ st.paired=!!s.paired; st.accounts=s.accounts||[]; st.serverConnect=s.connecting||{}; }); }
+// 서버가 준 계정별 로그인 상태 키(server.ts connectKey 와 동일: "채널 라벨").
+function sckey(ch,label){ return ch+" "+label; }
 
 function stepper(){
   $("stepper").innerHTML=STEPS.map(function(t,i){
@@ -149,7 +152,12 @@ function grid(){
   $("grid").innerHTML=Object.keys(CH).map(function(ch){
     var c=CH[ch], accts=acctsOf(ch);
     var rows=accts.map(function(a){
-      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span><span class="badge ok">\\u2713 연결됨</span></div>';
+      // 서버 로그인 상태가 있으면 그걸 우선 표시(로그인 중/실패). 없으면 등록됨=연결됨.
+      var cs=st.serverConnect[sckey(ch,a.label)];
+      var badge='<span class="badge ok">\\u2713 연결됨</span>';
+      if(cs&&cs.status==="connecting"){ badge='<span class="badge warn">로그인 창 여는 중\\u2026</span>'; }
+      else if(cs&&cs.status==="error"){ badge='<span class="badge warn" title="'+esc(cs.message||"")+'">로그인 실패 — 다시 시도</span>'; }
+      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span>'+badge+'</div>';
     });
     var busyNote=false;
     Object.keys(st.connecting).forEach(function(k){

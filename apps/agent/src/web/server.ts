@@ -81,7 +81,10 @@ type TgState = {
   error?: string;
   codeGate?: Deferred<string>; // 코드 입력을 기다리는 게이트(코드 도착 시 resolve)
 };
-const connectState = new Map<string, WaState | TgState>();
+// 창(alibaba/instagram) 로그인 진행 상태(#63) — 로그인은 fire-and-forget(사용자가 창에서 몇 분까지
+// 걸릴 수 있어 HTTP 응답을 붙잡지 못함)이라, 실패를 이 상태로 마법사 UI에 표면화한다(에러 안 삼킴).
+type WinState = { kind: "window"; status: "connecting" | "done" | "error"; message?: string };
+const connectState = new Map<string, WaState | TgState | WinState>();
 function ckey(channel: string, label: string): string {
   return channel + ":" + label;
 }
@@ -132,7 +135,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (req.method === "GET" && url === "/api/status") {
     const token = await loadToken();
     const accounts = (await listAccounts()).map((a) => ({ channel: a.channel, label: a.label }));
-    send(res, 200, { paired: Boolean(token), accounts });
+    // 창-로그인(alibaba/instagram) 진행/실패 상태만 골라 "채널 라벨" 키로 준다(#63). 마법사 sckey 와 일치.
+    const connecting: Record<string, { status: string; message?: string }> = {};
+    for (const [key, st] of connectState) {
+      if (st.kind !== "window") continue;
+      const [channel, label] = key.split(":");
+      connecting[`${channel} ${label}`] = { status: st.status, message: st.message };
+    }
+    send(res, 200, { paired: Boolean(token), accounts, connecting });
     return;
   }
 
@@ -164,7 +174,18 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     try {
       await addAccount(channel, label).catch(() => undefined); // 이미 등록돼 있으면 무시
       // 로그인 창을 띄운다. 사용자가 창에서 로그인 완료할 때까지 걸리므로 응답은 기다리지 않는다(fire-and-forget).
-      login(sessionPath(channel, label)).catch(() => undefined);
+      // ★단, 결과(성공/실패)는 connectState 에 기록해 /api/status 로 마법사에 표면화한다(에러 안 삼킴, #63).
+      const key = ckey(channel, label);
+      connectState.set(key, { kind: "window", status: "connecting" });
+      login(sessionPath(channel, label))
+        .then(() => connectState.set(key, { kind: "window", status: "done" }))
+        .catch((error: unknown) =>
+          connectState.set(key, {
+            kind: "window",
+            status: "error",
+            message: error instanceof Error ? error.message : "로그인 창을 열지 못했습니다."
+          })
+        );
       send(res, 200, { ok: true, started: true });
     } catch (error) {
       send(res, 200, { ok: false, message: error instanceof Error ? error.message : "연결 시작 실패" });

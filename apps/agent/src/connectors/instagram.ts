@@ -5,14 +5,13 @@
 //     진짜 웹 세션이라 모바일 사칭 API보다 계정 정지 위험이 낮다.
 //   - 세션은 영구 프로필(.auth/instagram[--label])에 로컬 저장(★서버로 안 감).
 
-import { delay, findChrome, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
+import { delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "@qualiflow/adapter-alibaba/runtime";
 import type { ChatRawConversation, ChatRawMessage } from "@qualiflow/adapter-chat";
 import type { MessageAttachment } from "@qualiflow/core";
 import { chromium, type Page } from "playwright-core";
 
 import { cacheMedia, fetchUrlBytes } from "../media";
 
-const DEBUG_PORT = 9223;
 const INBOX_URL = "https://www.instagram.com/direct/inbox/";
 const IG_APP_ID = "936619743392459"; // 인스타그램 웹 앱 id(공개값)
 const LOGIN_TIMEOUT_MS = Number(process.env.QUALIFLOW_LOGIN_TIMEOUT_MS) || 5 * 60 * 1000;
@@ -120,12 +119,14 @@ async function withInstagramPage<T>(
   if (!chromePath) {
     throw new Error("Chrome 실행파일을 못 찾았어요. CHROME_PATH 환경변수로 경로를 지정하세요.");
   }
-  const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, INBOX_URL, { offscreen: options.offscreen });
+  // ★빈 포트를 새로 받아 쓴다(9223 고정 X) — 백그라운드 fetch 와 로그인이 겹쳐도 포트 충돌이 없게(alibaba와 동일).
+  const port = await findFreePort();
+  const chrome = spawnChrome(chromePath, profileDir, port, INBOX_URL, { offscreen: options.offscreen });
   try {
-    if (!(await waitForCdp(DEBUG_PORT))) {
+    if (!(await waitForCdp(port))) {
       throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 있으면 닫고 다시 시도하세요.");
     }
-    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
     try {
       const context = browser.contexts()[0];
       const page = context.pages()[0] ?? (await context.newPage());
