@@ -4,7 +4,7 @@
 //   - 데이터: apps/web/.data/<channel>-conversations[.json | --<label>.json]
 //   - 등록부: apps/web/.data/agent-accounts.json  (나중에 클라우드 channel_connections로 승격)
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,6 +50,20 @@ export function dataFile(channel: string, label: string): string {
   return label === "default"
     ? resolve(DATA_ROOT, `${channel}-conversations.json`)
     : resolve(DATA_ROOT, `${channel}-conversations--${label}.json`);
+}
+
+// 실제 로그인 세션이 있는지 — 세션 폴더가 존재하고 비어있지 않으면 로그인된 것으로 본다.
+//   라벨만 등록되고(addAccount) 로그인은 안 한 계정과 구분한다: 로그인 흐름(QR/코드/창/OAuth)이
+//   성공해야 세션 폴더에 인증 파일이 쌓이므로, 폴더가 없거나 비어있으면 "아직 로그인 안 됨".
+//   ※알리바바 창을 열었다 로그인 없이 닫으면 프로필 폴더만 생겨 오탐 가능(엣지케이스) — 등록만 된
+//     계정을 "연결됨"으로 속이던 기존 버그를 없애는 게 우선.
+export async function hasSession(channel: string, label: string): Promise<boolean> {
+  try {
+    const entries = await readdir(sessionPath(channel, label));
+    return entries.length > 0;
+  } catch {
+    return false; // 폴더 없음 = 로그인 안 함
+  }
 }
 
 export async function listAccounts(): Promise<Account[]> {

@@ -13,7 +13,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import qrcode from "qrcode-terminal";
 
-import { addAccount, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
+import { addAccount, hasSession, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
 import { AGENT_VERSION, CLOUD_BASE_URL } from "../config";
 import { buildAuthUrl, exchangeCode } from "../connectors/email";
 import { loginInstagram } from "../connectors/instagram";
@@ -202,7 +202,15 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === "GET" && url === "/api/status") {
     const token = await loadToken();
-    const accounts = (await listAccounts()).map((a) => ({ channel: a.channel, label: a.label }));
+    // ★connected = 실제 로그인 세션 유무. 라벨만 등록되고 로그인 안 한 계정을 "연결됨"으로
+    //   속이던 버그를 막는다(마법사가 이 값으로 "연결됨" vs "로그인 필요"를 정직하게 표시).
+    const accounts = await Promise.all(
+      (await listAccounts()).map(async (a) => ({
+        channel: a.channel,
+        label: a.label,
+        connected: await hasSession(a.channel, a.label)
+      }))
+    );
     // 창-로그인(alibaba/instagram) 진행/실패 상태만 골라 "채널 라벨" 키로 준다(#63). 마법사 sckey 와 일치.
     const connecting: Record<string, { status: string; message?: string }> = {};
     for (const [key, st] of connectState) {
