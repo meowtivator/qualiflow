@@ -16,6 +16,8 @@ import qrcode from "qrcode-terminal";
 import { addAccount, hasSession, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
 import { AGENT_VERSION, CLOUD_BASE_URL } from "../config";
 import { buildAuthUrl, exchangeCode } from "../connectors/email";
+import { fetchChannel } from "../fetch";
+import { pushAccount } from "../push";
 import { loginInstagram } from "../connectors/instagram";
 import { loginTelegram, type TelegramAuthPrompts } from "../connectors/telegram";
 import { loginWhatsApp } from "../connectors/whatsapp";
@@ -78,20 +80,60 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-type WaState = { kind: "whatsapp"; qr: boolean[][] | null; done: boolean; error?: string };
-type TgStage = "phone" | "code" | "done" | "error";
+// 계정별 '연결 흐름'의 단일 상태(status). 채널이 무엇이든 마법사는 이 한 값으로 진행을 본다.
+//   logging_in  = 로그인 진행(창/QR/전화코드/OAuth). 채널별 데이터(qr/codeGate)는 그대로 유지.
+//   registering = 로그인 성공 → 자동 fetch + 클라우드 등록 진행("동기화 중").
+//   connected   = 로그인 + fetch + 클라우드 등록 3개 다 성공(★비즈니스 규칙: 세션만으론 '연결됨' 아님).
+//   login_failed= 로그인 자체 실패(QR 실패/코드 오류·2FA/창 오류/OAuth 거부).
+//   sync_failed = 로그인은 됐으나 fetch 또는 등록이 실패("동기화 실패" — /api/resync 로 재시도).
+type ConnStatus = "logging_in" | "registering" | "connected" | "login_failed" | "sync_failed";
+// WaState: QR 매트릭스(스캔되면 null). TgState: 전화→코드 흐름 데이터(codeGate/stage). 둘 다 status 를 함께 든다.
+//   WinState: 창(alibaba/instagram)·이메일(OAuth) — 채널별 데이터 없이 status 만.
+type WaState = { kind: "whatsapp"; status: ConnStatus; qr: boolean[][] | null; error?: string };
+type TgStage = "phone" | "code"; // 전화 입력 대기 / 코드 입력 대기(로그인 진행 중 세부단계 — status=logging_in 안에서만 의미)
 type TgState = {
   kind: "telegram";
+  status: ConnStatus;
   stage: TgStage;
   error?: string;
   codeGate?: Deferred<string>; // 코드 입력을 기다리는 게이트(코드 도착 시 resolve)
 };
-// 창(alibaba/instagram) 로그인 진행 상태(#63) — 로그인은 fire-and-forget(사용자가 창에서 몇 분까지
-// 걸릴 수 있어 HTTP 응답을 붙잡지 못함)이라, 실패를 이 상태로 마법사 UI에 표면화한다(에러 안 삼킴).
-type WinState = { kind: "window"; status: "connecting" | "done" | "error"; message?: string };
-const connectState = new Map<string, WaState | TgState | WinState>();
+type WinState = { kind: "window"; status: ConnStatus; error?: string };
+type ConnState = WaState | TgState | WinState;
+const connectState = new Map<string, ConnState>();
 function ckey(channel: string, label: string): string {
   return channel + ":" + label;
+}
+
+// 상태 갱신(에러 동반 가능). 없던 키면 window 형태로 만든다(창/이메일 기본). 채널별 데이터(qr/codeGate)는
+// 각 흐름이 자기 state 를 직접 만들어 두므로, 여기선 status/error 만 덮어쓴다.
+function setStatus(channel: string, label: string, status: ConnStatus, error?: string): void {
+  const key = ckey(channel, label);
+  const prev = connectState.get(key);
+  if (prev) {
+    prev.status = status;
+    prev.error = error;
+  } else {
+    connectState.set(key, { kind: "window", status, error });
+  }
+}
+
+// 로그인 성공 직후의 파이프라인: fetch → 클라우드 등록 → connected. fire-and-forget(HTTP 응답 안 붙잡음) —
+// 마법사가 /api/status 폴링으로 registering→connected 를 본다. fetch/등록 어느 쪽이 실패해도 sync_failed 로 표면화.
+//   ★비즈니스 규칙: connected = 세션 + fetch + 클라우드 등록 3개 전부 성공(세션만으론 아님).
+async function connectFlow(channel: string, label: string): Promise<void> {
+  setStatus(channel, label, "registering");
+  try {
+    await fetchChannel(channel, label, { cached: false }); // 로그인 직후 첫 인박스 읽기(.data 에 저장)
+    const result = await pushAccount(channel, label); // 클라우드 등록(대화 있으면 push, 없으면 빈 등록)
+    if (result.status === "error") {
+      setStatus(channel, label, "sync_failed", result.detail);
+      return;
+    }
+    setStatus(channel, label, "connected");
+  } catch (error) {
+    setStatus(channel, label, "sync_failed", error instanceof Error ? error.message : "동기화 실패");
+  }
 }
 
 // 이메일 OAuth 진행 중인 state → 어떤 라벨/redirect 로 교환할지(콜백이 code와 함께 이걸로 찾는다).
@@ -202,23 +244,34 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === "GET" && url === "/api/status") {
     const token = await loadToken();
-    // ★connected = 실제 로그인 세션 유무. 라벨만 등록되고 로그인 안 한 계정을 "연결됨"으로
-    //   속이던 버그를 막는다(마법사가 이 값으로 "연결됨" vs "로그인 필요"를 정직하게 표시).
+    // 계정별 통합 status 를 준다. 이번 실행 중 진행한 흐름이 있으면 그 status(logging_in/registering/
+    //   connected/login_failed/sync_failed)를, 없으면(예: 상주 재시작 후) 세션 유무로 파생한다:
+    //   세션 있음 → connected(예전에 연결됨, watch 가 동기화 유지), 없음 → status 없음(=아직 로그인 안 됨).
+    // ★비즈니스 규칙: 이번 흐름에서의 connected 는 세션+fetch+클라우드등록 3개가 다 성공했을 때만 세팅된다.
     const accounts = await Promise.all(
-      (await listAccounts()).map(async (a) => ({
-        channel: a.channel,
-        label: a.label,
-        connected: await hasSession(a.channel, a.label)
-      }))
+      (await listAccounts()).map(async (a) => {
+        const live = connectState.get(ckey(a.channel, a.label));
+        const status = live ? live.status : (await hasSession(a.channel, a.label)) ? "connected" : null;
+        const error = live?.error ?? null;
+        return { channel: a.channel, label: a.label, status, error };
+      })
     );
-    // 창-로그인(alibaba/instagram) 진행/실패 상태만 골라 "채널 라벨" 키로 준다(#63). 마법사 sckey 와 일치.
-    const connecting: Record<string, { status: string; message?: string }> = {};
-    for (const [key, st] of connectState) {
-      if (st.kind !== "window") continue;
-      const [channel, label] = key.split(":");
-      connecting[`${channel} ${label}`] = { status: st.status, message: st.message };
+    send(res, 200, { paired: Boolean(token), accounts });
+    return;
+  }
+
+  // 세션 살아있는 계정에 connectFlow 만 재실행(sync_failed 재시도용). 로그인은 이미 됐다고 보고 fetch+등록만.
+  //   ★127.0.0.1 전용(서버 자체가 HOST=127.0.0.1 바인딩이라 외부에서 못 도달). 세션 없으면 거부.
+  if (req.method === "POST" && url === "/api/resync") {
+    const body = await readJson(req);
+    const channel = typeof body.channel === "string" ? body.channel : "";
+    const label = sanitizeLabel(typeof body.label === "string" && body.label ? body.label : DEFAULT_LABEL);
+    if (!channel || !(await hasSession(channel, label))) {
+      send(res, 200, { ok: false, message: "로그인 세션이 없습니다 — 먼저 로그인하세요." });
+      return;
     }
-    send(res, 200, { paired: Boolean(token), accounts, connecting });
+    void connectFlow(channel, label); // fire-and-forget: 마법사가 /api/status 폴링으로 결과를 본다
+    send(res, 200, { ok: true, started: true });
     return;
   }
 
@@ -250,17 +303,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     try {
       await addAccount(channel, label).catch(() => undefined); // 이미 등록돼 있으면 무시
       // 로그인 창을 띄운다. 사용자가 창에서 로그인 완료할 때까지 걸리므로 응답은 기다리지 않는다(fire-and-forget).
-      // ★단, 결과(성공/실패)는 connectState 에 기록해 /api/status 로 마법사에 표면화한다(에러 안 삼킴, #63).
-      const key = ckey(channel, label);
-      connectState.set(key, { kind: "window", status: "connecting" });
+      // ★단, 결과(성공/실패)는 status 로 기록해 /api/status 로 마법사에 표면화한다(에러 안 삼킴, #63).
+      setStatus(channel, label, "logging_in");
       login(sessionPath(channel, label))
-        .then(() => connectState.set(key, { kind: "window", status: "done" }))
+        .then(() => connectFlow(channel, label)) // 로그인 성공 → fetch+등록 파이프라인(registering→connected)
         .catch((error: unknown) =>
-          connectState.set(key, {
-            kind: "window",
-            status: "error",
-            message: error instanceof Error ? error.message : "로그인 창을 열지 못했습니다."
-          })
+          setStatus(channel, label, "login_failed", error instanceof Error ? error.message : "로그인 창을 열지 못했습니다.")
         );
       send(res, 200, { ok: true, started: true });
     } catch (error) {
@@ -274,7 +322,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const body = await readJson(req);
     const label = sanitizeLabel(typeof body.label === "string" && body.label ? body.label : DEFAULT_LABEL);
     const key = ckey("whatsapp", label);
-    const st: WaState = { kind: "whatsapp", qr: null, done: false };
+    const st: WaState = { kind: "whatsapp", status: "logging_in", qr: null };
     connectState.set(key, st);
     // fire-and-forget: 로그인이 끝날 때까지(스캔) 오래 걸리므로 응답은 즉시 준다. 진행은 /api/wa-qr로.
     loginWhatsApp({
@@ -286,25 +334,25 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       .then(async () => {
         await ensureRegistered("whatsapp", label);
         st.qr = null;
-        st.done = true;
+        await connectFlow("whatsapp", label); // QR 스캔 성공 → fetch+등록(registering→connected)
       })
       .catch((error: unknown) => {
         st.qr = null;
-        st.error = error instanceof Error ? error.message : "WhatsApp 로그인 실패";
+        setStatus("whatsapp", label, "login_failed", error instanceof Error ? error.message : "WhatsApp 로그인 실패");
       });
     send(res, 200, { ok: true, started: true });
     return;
   }
 
-  // 현재 WhatsApp QR 매트릭스(있으면) / done / error 를 마법사에 준다. QR 원문 문자열은 넘기지 않는다.
+  // 현재 WhatsApp QR 매트릭스(있으면) + 통합 status 를 마법사에 준다. QR 원문 문자열은 넘기지 않는다.
   if (req.method === "GET" && url === "/api/wa-qr") {
     const label = sanitizeLabel(new URL(req.url || "/", "http://x").searchParams.get("label") || DEFAULT_LABEL);
     const st = connectState.get(ckey("whatsapp", label));
     if (!st || st.kind !== "whatsapp") {
-      send(res, 200, { qr: null, done: false });
+      send(res, 200, { qr: null, status: null });
       return;
     }
-    send(res, 200, { qr: st.qr, done: st.done, error: st.error ?? null });
+    send(res, 200, { qr: st.qr, status: st.status, error: st.error ?? null });
     return;
   }
 
@@ -319,7 +367,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
     const key = ckey("telegram", label);
     const codeGate = deferred<string>();
-    const st: TgState = { kind: "telegram", stage: "phone", codeGate };
+    const st: TgState = { kind: "telegram", status: "logging_in", stage: "phone", codeGate };
     connectState.set(key, st);
 
     const prompts: TelegramAuthPrompts = {
@@ -344,20 +392,26 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       //   — phoneCode 재무장(위)이 '다음 코드'를 기다려 사용자가 새 코드로 재시도할 수 있게. 반면 2FA
       //   미지원은 회복 불가라 truthy 로 즉시 끊어 무한루프를 막는다.
       onError: (err): boolean => {
-        st.stage = err.message === TG_2FA_UNSUPPORTED ? "error" : "code";
+        // 2FA 미지원 = 회복 불가 → login_failed 로 즉시 끊는다. 코드 오류(만료/오타)는 logging_in 유지 +
+        // stage="code" 로 남겨 사용자가 새 코드로 재시도(에러 문구는 그대로 노출).
+        const fatal = err.message === TG_2FA_UNSUPPORTED;
         st.error = err.message; // PHONE_CODE_INVALID / PHONE_CODE_EXPIRED / 2FA 안내를 그대로 노출
-        return err.message === TG_2FA_UNSUPPORTED; // 2FA는 즉시 중단, 코드 오류는 계속(재시도 가능)
+        if (fatal) {
+          st.status = "login_failed";
+        } else {
+          st.stage = "code";
+        }
+        return fatal; // 2FA는 즉시 중단, 코드 오류는 계속(재시도 가능)
       }
     };
 
     loginTelegram(sessionPath("telegram", label), prompts)
       .then(async () => {
         await ensureRegistered("telegram", label);
-        st.stage = "done";
+        await connectFlow("telegram", label); // 코드 로그인 성공 → fetch+등록(registering→connected)
       })
       .catch((error: unknown) => {
-        st.stage = "error";
-        st.error = error instanceof Error ? error.message : "Telegram 로그인 실패";
+        setStatus("telegram", label, "login_failed", error instanceof Error ? error.message : "Telegram 로그인 실패");
       });
 
     send(res, 200, { ok: true, started: true });
@@ -384,15 +438,15 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return;
   }
 
-  // Telegram 진행 상태(전화 대기 / 코드 대기 / 완료 / 에러)를 마법사에 준다.
+  // Telegram 진행 상태를 마법사에 준다: stage(phone/code 패널 전환용) + 통합 status(동기화중/연결됨/실패).
   if (req.method === "GET" && url === "/api/tg-state") {
     const label = sanitizeLabel(new URL(req.url || "/", "http://x").searchParams.get("label") || DEFAULT_LABEL);
     const st = connectState.get(ckey("telegram", label));
     if (!st || st.kind !== "telegram") {
-      send(res, 200, { stage: "phone", error: null });
+      send(res, 200, { stage: "phone", status: null, error: null });
       return;
     }
-    send(res, 200, { stage: st.stage, error: st.error ?? null });
+    send(res, 200, { stage: st.stage, status: st.status, error: st.error ?? null });
     return;
   }
 
@@ -405,14 +459,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     // 추측 불가한 state(랜덤 16바이트) — 콜백에서 이 값으로 라벨/redirect 를 되찾고, CSRF 를 막는다.
     const state = randomBytes(16).toString("hex");
     emailOAuth.set(state, { label, redirectUri });
-    const key = ckey("email", label);
-    connectState.set(key, { kind: "window", status: "connecting" });
+    setStatus("email", label, "logging_in");
     try {
       const authUrl = buildAuthUrl(redirectUri, state); // GMAIL_CLIENT_ID 없으면 여기서 throw
       send(res, 200, { ok: true, authUrl });
     } catch (error) {
       emailOAuth.delete(state);
-      connectState.set(key, { kind: "window", status: "error", message: error instanceof Error ? error.message : "설정 필요" });
+      setStatus("email", label, "login_failed", error instanceof Error ? error.message : "설정 필요");
       send(res, 200, { ok: false, message: error instanceof Error ? error.message : "이메일 연결 시작 실패" });
     }
     return;
@@ -432,9 +485,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return;
     }
     emailOAuth.delete(state);
-    const key = ckey("email", pending.label);
     if (oauthError || !code) {
-      connectState.set(key, { kind: "window", status: "error", message: oauthError ?? "승인 코드가 없습니다." });
+      setStatus("email", pending.label, "login_failed", oauthError ?? "승인 코드가 없습니다.");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(oauthResultHtml("연결 취소됨", "승인이 완료되지 않았습니다. 마법사로 돌아가 다시 시도하세요."));
       return;
@@ -442,11 +494,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     try {
       await addAccount("email", pending.label).catch(() => undefined); // 이미 등록돼 있으면 무시
       await exchangeCode(sessionPath("email", pending.label), code, pending.redirectUri);
-      connectState.set(key, { kind: "window", status: "done" });
+      // 토큰 교환 성공 = 로그인 성공. fetch+등록은 오래 걸릴 수 있어 콜백 HTML 응답을 붙잡지 않는다
+      // (fire-and-forget). 마법사가 /api/status 폴링으로 registering→connected 를 본다.
+      void connectFlow("email", pending.label);
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(oauthResultHtml("이메일 연결 완료", "이 탭을 닫고 마법사로 돌아가세요."));
     } catch (error) {
-      connectState.set(key, { kind: "window", status: "error", message: error instanceof Error ? error.message : "토큰 교환 실패" });
+      setStatus("email", pending.label, "login_failed", error instanceof Error ? error.message : "토큰 교환 실패");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(oauthResultHtml("연결 실패", error instanceof Error ? error.message : "토큰 교환에 실패했습니다."));
     }

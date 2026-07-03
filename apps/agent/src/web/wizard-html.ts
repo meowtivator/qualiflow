@@ -92,8 +92,8 @@ var CH={
 };
 // 채널별 웹 로그인 방식: window=창(alibaba/instagram) / qr=WhatsApp QR / phone=Telegram 전화+코드 / oauth=구글 승인(email).
 var FLOW={alibaba:"window",instagram:"window",whatsapp:"qr",telegram:"phone",email:"oauth"};
-// serverConnect = 서버가 준 창-로그인(alibaba/instagram) 진행 상태(connecting/done/error). grid()가 배지로 표시.
-var st={step:0,paired:false,accounts:[],connecting:{},adding:{},panel:null,serverConnect:{}};
+// 계정마다 서버가 준 단일 status(logging_in/registering/connected/login_failed/sync_failed 또는 null=미로그인)를 든다.
+var st={step:0,paired:false,accounts:[],connecting:{},adding:{},panel:null};
 // panel = {ch, label, mode} — 현재 열려있는 로그인 패널(qr 또는 phone/code). 폴링 타이머는 panelTimer.
 var panelTimer=null;
 
@@ -103,10 +103,10 @@ function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {"&":"&am
 function acctsOf(ch){ return st.accounts.filter(function(a){return a.channel===ch}); }
 function ckey(ch,label){ return ch+"\\u0000"+label; }
 function totalAccounts(){ return st.accounts.length; }
+// "연결됨"으로 셀 계정 수(스텝 힌트용) — status==="connected" 인 것만.
+function connectedCount(){ return st.accounts.filter(function(a){return a.status==="connected"}).length; }
 
-function loadStatus(){ return api("/api/status").then(function(s){ st.paired=!!s.paired; st.accounts=s.accounts||[]; st.serverConnect=s.connecting||{}; }); }
-// 서버가 준 계정별 로그인 상태 키(server.ts connectKey 와 동일: "채널 라벨").
-function sckey(ch,label){ return ch+" "+label; }
+function loadStatus(){ return api("/api/status").then(function(s){ st.paired=!!s.paired; st.accounts=s.accounts||[]; }); }
 
 function stepper(){
   $("stepper").innerHTML=STEPS.map(function(t,i){
@@ -133,7 +133,7 @@ function render(){
   } else if(st.step===1){
     b.innerHTML='<h2>채널 연결</h2><p class="sub">한 채널에 여러 계정을 붙일 수 있습니다. 채널의 <b>계정 추가</b>를 누르고 이름을 정한 뒤 로그인하세요.</p><div class="grid" id="grid"></div>';
     grid();
-    var n=totalAccounts();
+    var n=connectedCount();
     $("hint").textContent=n>0?(n+"개 계정 연결됨"):"최소 1개를 연결하세요";
   } else {
     b.innerHTML='<div style="text-align:center;padding:10px 0 4px"><div class="done-ic">\\u2713</div>'
@@ -149,22 +149,27 @@ function render(){
   nx.disabled=(st.step===0&&!st.paired);
 }
 
+// 계정 배지 = 서버가 준 통합 status 로 결정. null(미로그인)/login_failed/sync_failed 는 눌러서 재시도.
+//   ★connected 는 세션+fetch+클라우드등록 3개가 다 성공했을 때만(server.ts) — "연결됨"이 정직해진다.
+function badgeFor(ch,a){
+  var s=a.status, err=a.error?' title="'+esc(a.error)+'"':'';
+  if(s==="logging_in"){ return '<span class="badge warn">로그인 중\\u2026</span>'; }
+  if(s==="registering"){ return '<span class="badge warn">동기화 중\\u2026</span>'; }
+  if(s==="connected"){ return '<span class="badge ok">\\u2713 연결됨</span>'; }
+  if(s==="login_failed"){ return '<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer"'+err+'>로그인 실패 \\u2014 다시 로그인</button>'; }
+  if(s==="sync_failed"){ return '<button class="badge warn" data-resync="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer"'+err+'>동기화 실패 \\u2014 다시</button>'; }
+  // status 없음 = 라벨만 등록되고 로그인 안 됨 → 눌러서 그 라벨로 바로 로그인.
+  return '<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer">로그인 필요 \\u2014 지금 로그인</button>';
+}
+
 function grid(){
   $("grid").innerHTML=Object.keys(CH).map(function(ch){
     var c=CH[ch], accts=acctsOf(ch);
     var rows=accts.map(function(a){
-      // 배지 = 실제 상태. 진행중/실패(서버 connectState) 우선, 그 다음 실제 세션(a.connected).
-      // ★핵심: 라벨만 등록되고 로그인 안 됐으면(연결 안 됨) "연결됨"이 아니라 "로그인 필요" 버튼을 보여
-      //   준다 — 눌러서 그 라벨로 바로 로그인(startConnect). (예전엔 등록만 돼도 "연결됨"으로 속였다.)
-      var cs=st.serverConnect[sckey(ch,a.label)];
-      var badge;
-      if(cs&&cs.status==="connecting"){ badge='<span class="badge warn">로그인 창 여는 중\\u2026</span>'; }
-      else if(cs&&cs.status==="error"){ badge='<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer" title="'+esc(cs.message||"")+'">로그인 실패 \\u2014 다시 로그인</button>'; }
-      else if(a.connected){ badge='<span class="badge ok">\\u2713 연결됨</span>'; }
-      else { badge='<button class="badge warn" data-login="'+ch+'" data-label="'+esc(a.label)+'" style="cursor:pointer">로그인 필요 \\u2014 지금 로그인</button>'; }
-      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span>'+badge+'</div>';
+      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span>'+badgeFor(ch,a)+'</div>';
     });
     var busyNote=false;
+    // 클릭 직후 아직 /api/status 에 안 뜬 새 라벨(막 로그인 시작)을 낙관적으로 "연결 중" 으로 보여준다.
     Object.keys(st.connecting).forEach(function(k){
       if(k.indexOf(ch+"\\u0000")===0 && st.connecting[k]==="busy"){
         var lbl=k.split("\\u0000")[1];
@@ -208,9 +213,17 @@ function startConnect(ch,rawLabel){
   }).then(grid).catch(function(){ st.connecting[k]=null; grid(); });
 }
 
+// sync_failed 재시도: 로그인은 됐으니 fetch+등록(connectFlow)만 다시. 4초 status 폴링이 registering→connected 를 보여준다.
+function resync(ch,label){
+  api("/api/resync",{channel:ch,label:label}).then(function(r){
+    if(r&&!r.ok&&r.message){ alert(r.message); }
+    return loadStatus();
+  }).then(grid);
+}
+
 // ── Email: 구글 OAuth 승인(loopback) ──
-// 서버에서 동의 URL을 받아 새 탭으로 연다. 승인이 끝나면 서버가 /oauth/callback 으로 code를 받아
-// 토큰 교환·저장·등록을 하고, connectState 로 done/error 를 표면화 → 4초 상태 폴링이 배지를 갱신한다.
+// 서버에서 동의 URL을 받아 새 탭으로 연다. 승인이 끝나면 서버가 /oauth/callback 으로 code를 받아 토큰
+// 교환·저장 후 connectFlow(fetch+등록)를 돌린다 → 4초 status 폴링이 registering→connected 배지를 갱신한다.
 function startEmail(ch,label){
   var k=ckey(ch,label);
   st.connecting[k]="busy"; grid();
@@ -225,7 +238,7 @@ function startEmail(ch,label){
 
 function stopPanel(){ if(panelTimer){clearInterval(panelTimer);panelTimer=null;} st.panel=null; }
 
-// 로그인 패널을 채널 카드 밑에 인라인으로 그린다. mode: qr | phone | code | done.
+// 로그인 패널을 채널 카드 밑에 인라인으로 그린다. mode: qr | phone | code | syncing.
 function openPanel(ch,label,mode,extra){
   st.panel={ch:ch,label:label,mode:mode,extra:extra||{}}; grid();
 }
@@ -241,11 +254,14 @@ function startWhatsApp(ch,label){
 function pollWaQr(label){
   if(panelTimer) clearInterval(panelTimer);
   panelTimer=setInterval(function(){
-    if(!st.panel||st.panel.mode!=="qr"){ clearInterval(panelTimer); panelTimer=null; return; }
+    if(!st.panel||(st.panel.mode!=="qr"&&st.panel.mode!=="syncing")){ clearInterval(panelTimer); panelTimer=null; return; }
     api("/api/wa-qr?label="+encodeURIComponent(label)).then(function(r){
       if(!st.panel) return;
+      // connected = 로그인+fetch+등록 다 끝남 → 패널 닫고 배지("연결됨")로. sync_failed/login_failed = 닫고 배지에서 재시도.
+      if(r.status==="connected"||r.status==="sync_failed"||r.status==="login_failed"){ stopPanel(); loadStatus().then(function(){ render(); }); return; }
+      // registering = QR 스캔됨, fetch+등록 진행 중 → "동기화 중" 패널로 전환(사용자가 진행을 본다).
+      if(r.status==="registering"){ st.panel.mode="syncing"; grid(); return; }
       if(r.error){ st.panel.extra={error:r.error}; grid(); return; }
-      if(r.done){ stopPanel(); loadStatus().then(function(){ render(); }); return; }
       st.panel.extra={qr:r.qr,waiting:!r.qr}; grid();
     });
   },1500);
@@ -282,13 +298,16 @@ function pollTgState(label){
     if(!st.panel||st.panel.ch!=="telegram"){ clearInterval(panelTimer); panelTimer=null; return; }
     api("/api/tg-state?label="+encodeURIComponent(label)).then(function(r){
       if(!st.panel) return;
-      // 코드 오류(만료/오타)는 회복 가능 — 코드 패널에 그대로 머물며 에러만 보여주고 계속 폴링한다
-      //   (사용자가 새 코드를 넣으면 그대로 재시도). stage==="error"(2FA 등 회복 불가)만 처음으로 되돌린다.
-      if(r.stage==="error"){ st.panel.mode="phone"; st.panel.extra={error:r.error}; grid(); if(panelTimer){clearInterval(panelTimer);panelTimer=null;} return; }
-      if(r.stage==="done"){ stopPanel(); loadStatus().then(function(){ render(); }); return; }
+      // 통합 status 우선: connected → 닫고 배지("연결됨"), sync_failed → 닫고 배지에서 재시도.
+      if(r.status==="connected"||r.status==="sync_failed"){ stopPanel(); loadStatus().then(function(){ render(); }); return; }
+      // login_failed(2FA 등 회복 불가) → 처음(전화)으로 되돌리고 폴링 중단.
+      if(r.status==="login_failed"){ st.panel.mode="phone"; st.panel.extra={error:r.error}; grid(); if(panelTimer){clearInterval(panelTimer);panelTimer=null;} return; }
+      // registering = 코드 로그인 성공, fetch+등록 진행 중 → "동기화 중" 패널로 전환.
+      if(r.status==="registering"){ st.panel.mode="syncing"; grid(); return; }
+      // 로그인 진행 중(logging_in): 전화→코드 세부단계는 stage 로 스위치.
       if(r.stage==="code"){
         if(st.panel.mode!=="code"){ st.panel.mode="code"; st.panel.extra={}; }
-        // 코드 단계 에러(PHONE_CODE_INVALID 등)를 코드 패널에 인라인 표시. 값이 바뀔 때만 다시 그린다.
+        // 코드 단계 에러(PHONE_CODE_INVALID 등)를 코드 패널에 인라인 표시(회복 가능 — 새 코드로 재시도). 값이 바뀔 때만 다시 그린다.
         var cur=(st.panel.extra&&st.panel.extra.error)||"";
         if((r.error||"")!==cur){ st.panel.extra={error:r.error||""}; grid(); }
       }
@@ -310,6 +329,10 @@ function panelHtml(ch){
   }
   if(p.mode==="code"){
     return '<div class="panel"><div class="phint">텔레그램 앱/문자로 받은 코드를 입력</div><div class="addrow"><input id="tgcode" type="text" placeholder="12345" autocomplete="off"/><button class="primary" data-tgcode="'+esc(p.label)+'">확인</button></div>'+err+'<button class="cancel" data-cancel="1">취소</button></div>';
+  }
+  if(p.mode==="syncing"){
+    // 로그인 성공 후 fetch+등록 진행("동기화 중") — 끝나면 폴링이 connected 를 보고 패널을 닫는다.
+    return '<div class="panel"><div class="phint" style="text-align:center;padding:14px 0">\\uD83D\\uDD04 동기화 중\\u2026 첫 메시지를 불러와 연결을 등록합니다.</div></div>';
   }
   return "";
 }
@@ -335,6 +358,7 @@ document.addEventListener("click",function(e){
   if(t.dataset.open){ st.adding[t.dataset.open]=true; grid(); return; }
   if(t.dataset.add){ var ch=t.dataset.add; var inp=document.querySelector('.lblinput[data-ch="'+ch+'"]'); startConnect(ch, inp?inp.value:""); return; }
   if(t.dataset.login){ startConnect(t.dataset.login, t.dataset.label||""); return; }
+  if(t.dataset.resync){ resync(t.dataset.resync, t.dataset.label||""); return; }
   if(t.dataset.tgphone){ tgSendPhone(t.dataset.tgphone); return; }
   if(t.dataset.tgcode){ tgSendCode(t.dataset.tgcode); return; }
   if(t.dataset.cancel){ stopPanel(); grid(); return; }
