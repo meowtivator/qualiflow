@@ -19,6 +19,16 @@ const TASK_SERVE = "QualiFlow Serve"; // serve(발송 명령 처리) 상주
 const TASK_WIZARD = "QualiFlow Wizard"; // wizard(로컬 설정 UI) 상주 — 웹 "채널 추가"가 여는 localhost:4317
 const APP = "QualiFlow";
 const CRLF = "\r\n";
+const BOM = "﻿"; // UTF-8 BOM — cmd.exe가 한글 안내를 chcp 65001과 함께 올바로 읽게(BOM 없으면 mojibake 위험).
+
+// 상주 3개를 창 없이 실행하는 헬퍼: `wscript run-hidden.vbs run.cmd <cmd>`.
+// run.cmd 를 직접 schtasks TR 로 걸면 로그온마다 검은 콘솔창이 뜬다 → VBS 로 감싸 창을 숨긴다.
+function hiddenTR(dest, cmd) {
+  // schtasks /TR 안의 따옴표는 \" 로 이스케이프. 최종 명령:
+  //   wscript "%DEST%\run-hidden.vbs" "%DEST%\run.cmd" <cmd>
+  return `wscript \\"${dest}\\run-hidden.vbs\\" \\"${dest}\\run.cmd\\" ${cmd}`;
+}
+const DEST = `%LOCALAPPDATA%\\${APP}`;
 
 console.log("① 런타임 패키지 빌드...");
 execSync("node package-app.mjs", { cwd: here, stdio: "inherit" });
@@ -32,21 +42,47 @@ cpSync(pkgSrc, resolve(distRoot, "package"), { recursive: true });
 //   마지막 setup 마법사도 call 로 부른다(마법사가 끝나면 이 창의 안내가 이어지도록).
 writeFileSync(
   resolve(distRoot, "install.bat"),
-  [
+  BOM + [
     "@echo off",
+    "chcp 65001 >nul",
     "setlocal",
     'set "HERE=%~dp0"',
-    `set "DEST=%LOCALAPPDATA%\\${APP}"`,
+    `set "DEST=${DEST}"`,
+    "",
+    "rem [가드] zip 안에서 바로 실행한 경우 방지 — package\\run.cmd 가 옆에 있어야 정상.",
+    'if not exist "%HERE%package\\run.cmd" (',
+    "  echo [중단] 설치 파일이 압축 안에 있는 것 같습니다.",
+    "  echo   zip 을 먼저 '압축 풀기(모두 추출)' 한 뒤, 풀린 폴더에서 install.bat 을 실행하세요.",
+    "  pause",
+    "  exit /b 1",
+    ")",
+    "",
     "echo QualiFlow 에이전트를 설치합니다...",
     'if not exist "%DEST%" mkdir "%DEST%"',
-    'xcopy "%HERE%package\\*" "%DEST%\\" /E /I /Y >nul',
     "",
+    "rem [파일락] 재설치/업데이트 시 실행 중인 상주가 node.exe·agent.mjs 를 잠가 xcopy 가 실패한다.",
+    "rem 복사 전에 상주 3개를 멈추고 잠깐 대기(핸들 해제)한다. 첫 설치엔 태스크가 없어 무해(2>nul).",
+    `schtasks /End /TN "${TASK_WATCH}" >nul 2>&1`,
+    `schtasks /End /TN "${TASK_SERVE}" >nul 2>&1`,
+    `schtasks /End /TN "${TASK_WIZARD}" >nul 2>&1`,
+    "ping -n 3 127.0.0.1 >nul",
+    "",
+    'xcopy "%HERE%package\\*" "%DEST%\\" /E /I /Y >nul',
+    "if errorlevel 1 (",
+    "  echo [중단] 파일 복사에 실패했습니다.",
+    "  echo   - 상주가 아직 파일을 쥐고 있을 수 있습니다. 이 창을 닫고 잠시 후 다시 실행해 보세요.",
+    "  echo   - 또는 백신이 복사를 막았을 수 있습니다.",
+    "  pause",
+    "  exit /b 1",
+    ")",
+    "",
+    "rem 상주 3개는 run.cmd 를 run-hidden.vbs 로 감싸 창 없이(0) 실행한다 — 로그온 시 검은 콘솔창이 안 뜨게.",
     "rem 상주 1) watch — 채널 인박스를 주기적으로 읽어 클라우드로 올림(실시간 동기화, 로그온 시 자동 시작).",
-    `schtasks /Create /TN "${TASK_WATCH}" /TR "\\"%DEST%\\run.cmd\\" watch" /SC ONLOGON /F >nul`,
+    `schtasks /Create /TN "${TASK_WATCH}" /TR "${hiddenTR("%DEST%", "watch")}" /SC ONLOGON /F >nul`,
     "rem 상주 2) serve — 대시보드에서 보낸 답장(발송 명령)을 받아 실제 채널로 보냄.",
-    `schtasks /Create /TN "${TASK_SERVE}" /TR "\\"%DEST%\\run.cmd\\" serve" /SC ONLOGON /F >nul`,
+    `schtasks /Create /TN "${TASK_SERVE}" /TR "${hiddenTR("%DEST%", "serve")}" /SC ONLOGON /F >nul`,
     "rem 상주 3) wizard — 설정 UI(계정 페어링 + 채널 추가)를 localhost:4317 에 항상 띄움. 웹 '채널 추가'가 여는 화면.",
-    `schtasks /Create /TN "${TASK_WIZARD}" /TR "\\"%DEST%\\run.cmd\\" wizard" /SC ONLOGON /F >nul`,
+    `schtasks /Create /TN "${TASK_WIZARD}" /TR "${hiddenTR("%DEST%", "wizard")}" /SC ONLOGON /F >nul`,
     `schtasks /Run /TN "${TASK_WATCH}" >nul 2>&1`,
     `schtasks /Run /TN "${TASK_SERVE}" >nul 2>&1`,
     `schtasks /Run /TN "${TASK_WIZARD}" >nul 2>&1`,
@@ -80,8 +116,14 @@ writeFileSync(
 // 제거 스크립트 — 태스크 2개 삭제 + 설치 폴더 삭제(로그인 세션은 남김).
 writeFileSync(
   resolve(distRoot, "uninstall.bat"),
-  [
+  BOM + [
     "@echo off",
+    "chcp 65001 >nul",
+    "rem 삭제 전에 상주를 멈춘다 — 실행 중이면 node.exe 가 폴더를 잠가 rmdir 가 실패한다.",
+    `schtasks /End /TN "${TASK_WATCH}" >nul 2>&1`,
+    `schtasks /End /TN "${TASK_SERVE}" >nul 2>&1`,
+    `schtasks /End /TN "${TASK_WIZARD}" >nul 2>&1`,
+    "ping -n 3 127.0.0.1 >nul",
     `schtasks /Delete /TN "${TASK_WATCH}" /F >nul 2>&1`,
     `schtasks /Delete /TN "${TASK_SERVE}" /F >nul 2>&1`,
     `schtasks /Delete /TN "${TASK_WIZARD}" /F >nul 2>&1`,
