@@ -352,9 +352,12 @@ loadStatus().then(function(){
   try { if(new URLSearchParams(location.search).get("add")==="1" && st.paired) st.step=1; } catch(e){}
   render();
 }).catch(function(){ render(); });
-// 채널 단계에서 계정 목록을 주기적으로 새로고침. 단, 로그인 패널이 열려 있으면 그리지 않는다
-// (입력칸/QR이 매 폴링마다 다시 그려져 포커스가 튀는 걸 막는다 — 패널은 자체 타이머로 갱신).
-setInterval(function(){ if(st.step===1 && !st.panel) loadStatus().then(grid); }, 4000);
+// 채널 단계에서 계정 목록을 주기적으로 새로고침. 단, 로그인 패널이 열려 있거나(입력칸/QR이 매
+// 폴링마다 다시 그려져 포커스가 튀는 걸 막음 — 패널은 자체 타이머로 갱신) 계정 이름을 입력하는
+// 중(st.adding)이면 그리지 않는다 — grid()가 .lblinput 을 새로 만들어 타이핑 중인 값·포커스가
+// 날아가는 걸 막는다. 사용자가 "연결"을 누르면(st.adding=false) 다음 폴링부터 정상 갱신된다.
+function isAdding(){ return Object.keys(st.adding).some(function(ch){return st.adding[ch]}); }
+setInterval(function(){ if(st.step===1 && !st.panel && !isAdding()) loadStatus().then(grid); }, 4000);
 </script>
 </body>
 </html>`;
