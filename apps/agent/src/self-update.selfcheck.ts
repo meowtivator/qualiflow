@@ -53,6 +53,10 @@ assert.ok(bat.includes(":qf_copy") && bat.includes("goto qf_copy"), "xcopy 재�
 assert.ok(bat.includes("if not errorlevel 1 goto qf_copied"), "복사 성공(errorlevel 0) 시에만 재시작으로 넘어가야 한다");
 assert.ok(/if %QF_TRY% geq \d+ goto qf_copied/.test(bat), "재시도 상한(초과 시 best-effort 재시작)이 있어야 한다");
 assert.ok(bat.includes("\r\n") && bat.endsWith("\r\n"), "배치는 CRLF 줄바꿈이어야 한다(cmd.exe)");
+// 파일락 해제: schtasks /End 만으로 자식 node.exe 가 남으면 xcopy 가 공유 위반으로 실패한다 →
+//   xcopy 전에 설치폴더 경로로 표적 종료가 있어야 한다. 다른 Node 앱은 안 건드리게 경로 필터.
+assert.ok(/Get-Process node[\s\S]*QualiFlow[\s\S]*Stop-Process -Force/.test(bat), "복사 전에 QualiFlow 설치폴더의 node.exe 를 표적 종료해 파일락을 풀어야 한다");
+assert.ok(bat.indexOf("Stop-Process") < bat.indexOf(":qf_copy"), "node.exe 종료는 xcopy 루프(:qf_copy)보다 먼저 와야 한다");
 // 관측성: 자동패치가 조용히 실패하지 않도록 모든 단계를 로그 파일에 남겨야 한다(사후 디버깅용).
 assert.ok(bat.includes('self-update.log'), "단계 로그를 self-update.log 에 남겨야 한다");
 assert.ok(/mkdir "%USERPROFILE%\\\.qualiflow\\logs"/.test(bat), "로그 폴더를 먼저 생성해야 한다");
