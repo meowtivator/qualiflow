@@ -43,6 +43,15 @@ function psSettings(taskName) {
 }
 const DEST = `%LOCALAPPDATA%\\${APP}`;
 
+// 설치 폴더에서 실행 중인 프로세스(주로 node.exe)를 표적 종료해 파일락을 푼다. schtasks /End 는 자식
+// node.exe 를 놓칠 수 있어, 이게 없으면 재설치(install)·삭제(uninstall) 때 공유위반·액세스거부가 난다.
+// ExecutablePath 로 설치 폴더만 필터 → 다른 Node 앱은 절대 안 건드린다(관리자로 실행되므로 CIM 조회 OK).
+// ★-like 는 \ 를 리터럴로 본다(정규식 아님) → 실제 경로처럼 '\'는 하나여야 한다('\\'면 매치 0 = 종전 버그).
+const killNodeInFolder =
+  `powershell -NoProfile -Command "Get-CimInstance Win32_Process | ` +
+  `Where-Object { $_.ExecutablePath -like '*\\${APP}\\*' } | ` +
+  `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`;
+
 console.log("① 런타임 패키지 빌드...");
 execSync("node package-app.mjs", { cwd: here, stdio: "inherit" });
 
@@ -86,6 +95,10 @@ writeFileSync(
     `schtasks /End /TN "${TASK_WATCH}" >nul 2>&1`,
     `schtasks /End /TN "${TASK_SERVE}" >nul 2>&1`,
     `schtasks /End /TN "${TASK_WIZARD}" >nul 2>&1`,
+    "rem [Kill] /End can leave a child node.exe holding node.exe/agent.mjs; kill only node from the install folder",
+    "rem (filtered by ExecutablePath so other Node apps are never touched). Without this, reinstall hits a sharing",
+    "rem violation and the retry loop fails - and the user re-runs install.bat, getting the UAC prompt every time.",
+    killNodeInFolder,
     "rem A running task can still hold node.exe for a moment after /End, so xcopy hits a sharing violation.",
     "rem Wait for the handles to release, then retry the copy up to 10 times (~30s) before giving up.",
     "ping 127.0.0.1 -n 3 >nul",
@@ -188,7 +201,9 @@ writeFileSync(
     `schtasks /End /TN "${TASK_WIZARD}" >nul 2>&1`,
     "rem schtasks /End can miss child/leftover node.exe. Kill only node started from the QualiFlow folder.",
     "rem (taskkill /IM node.exe would kill unrelated node apps too - forbidden; always filter by ExecutablePath.)",
-    `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '*\\\\${APP}\\\\*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
+    "rem ★Fix: the old pattern double-escaped the backslash ('*\\\\QualiFlow\\\\*'), which -like never matched",
+    "rem against real single-backslash paths - so node.exe was never killed and rmdir failed with Access denied.",
+    killNodeInFolder,
     "ping -n 3 127.0.0.1 >nul",
     `schtasks /Delete /TN "${TASK_WATCH}" /F >nul 2>&1`,
     `schtasks /Delete /TN "${TASK_SERVE}" /F >nul 2>&1`,
