@@ -1,0 +1,386 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]: B
+        - generic [ref=e6]:
+          - generic [ref=e7]: B2B CRM
+          - generic [ref=e8]: Agency Workspace
+        - button "사이드바 접기" [ref=e9] [cursor=pointer]:
+          - img [ref=e10]
+      - navigation [ref=e13]:
+        - generic [ref=e14]:
+          - button "바이어 관리" [expanded] [ref=e15] [cursor=pointer]:
+            - img [ref=e16]
+            - text: 바이어 관리
+          - button "반응 바이어" [ref=e18] [cursor=pointer]:
+            - img [ref=e19]
+            - generic [ref=e25]: 반응 바이어
+          - button "관심 바이어" [ref=e26] [cursor=pointer]:
+            - img [ref=e27]
+            - generic [ref=e29]: 관심 바이어
+          - button "주문 바이어" [ref=e30] [cursor=pointer]:
+            - img [ref=e31]
+            - generic [ref=e34]: 주문 바이어
+        - button "운영" [ref=e36] [cursor=pointer]:
+          - img [ref=e37]
+          - text: 운영
+        - generic [ref=e39]:
+          - generic [ref=e40]: 메신저
+          - link "메시지함" [ref=e41] [cursor=pointer]:
+            - /url: /messenger
+            - img [ref=e42]
+            - generic [ref=e44]: 메시지함
+        - generic [ref=e45]:
+          - generic [ref=e46]: 연동
+          - button "연결 소스" [ref=e47] [cursor=pointer]:
+            - img [ref=e48]
+            - generic [ref=e52]: 연결 소스
+      - generic [ref=e53]:
+        - button "설정" [ref=e54] [cursor=pointer]:
+          - img [ref=e55]
+          - generic [ref=e58]: 설정
+        - generic "운영자" [ref=e59]:
+          - img [ref=e60]
+          - generic [ref=e64]:
+            - generic [ref=e65]: 운영자
+            - generic [ref=e66]: admin
+    - main [ref=e67]:
+      - generic [ref=e68]:
+        - generic [ref=e69]:
+          - heading "연결 소스" [level=1] [ref=e70]
+          - generic [ref=e71]: 로컬 에이전트를 설치해 채널(알리바바 등)을 연결하고, 연결 상태를 확인합니다.
+        - generic [ref=e72]:
+          - button "다크" [ref=e73] [cursor=pointer]:
+            - img [ref=e74]
+            - text: 다크
+          - button "바이어 추가" [ref=e76] [cursor=pointer]:
+            - img [ref=e77]
+            - text: 바이어 추가
+      - generic [ref=e79]:
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - heading "채널" [level=2] [ref=e83]
+              - text: 6개 계정 연결됨 · 모두 정상
+            - link "채널 추가" [ref=e84] [cursor=pointer]:
+              - /url: http://127.0.0.1:4317/?add=1
+              - img [ref=e85]
+              - text: 채널 추가
+          - generic [ref=e86]:
+            - generic [ref=e87]:
+              - generic [ref=e88]:
+                - img "알리바바" [ref=e90]
+                - generic [ref=e92]:
+                  - generic [ref=e93]: 알리바바
+                  - generic [ref=e94]: 로그인 창으로 연결
+              - list [ref=e95]:
+                - listitem [ref=e96]:
+                  - generic [ref=e97]: enrichtest
+                  - generic [ref=e98]:
+                    - img [ref=e99]
+                    - text: 연결됨
+                - listitem [ref=e102]:
+                  - generic [ref=e103]: first
+                  - generic [ref=e104]:
+                    - img [ref=e105]
+                    - text: 연결됨
+                - listitem [ref=e108]:
+                  - generic [ref=e109]: main
+                  - generic [ref=e110]:
+                    - img [ref=e111]
+                    - text: 연결됨
+              - link "계정 추가" [ref=e114] [cursor=pointer]:
+                - /url: http://127.0.0.1:4317/?add=1
+                - img [ref=e115]
+                - text: 계정 추가
+            - generic [ref=e116]:
+              - generic [ref=e117]:
+                - img "WhatsApp" [ref=e119]
+                - generic [ref=e121]:
+                  - generic [ref=e122]: WhatsApp
+                  - generic [ref=e123]: QR 스캔으로 연결
+              - list [ref=e124]:
+                - listitem [ref=e125]:
+                  - generic [ref=e126]: first
+                  - generic [ref=e127]:
+                    - img [ref=e128]
+                    - text: 연결됨
+              - link "계정 추가" [ref=e131] [cursor=pointer]:
+                - /url: http://127.0.0.1:4317/?add=1
+                - img [ref=e132]
+                - text: 계정 추가
+            - generic [ref=e133]:
+              - generic [ref=e134]:
+                - img "Instagram" [ref=e136]
+                - generic [ref=e138]:
+                  - generic [ref=e139]: Instagram
+                  - generic [ref=e140]: 로그인 창으로 연결
+              - list [ref=e141]:
+                - listitem [ref=e142]:
+                  - generic [ref=e143]: main
+                  - generic [ref=e144]:
+                    - img [ref=e145]
+                    - text: 연결됨
+              - link "계정 추가" [ref=e148] [cursor=pointer]:
+                - /url: http://127.0.0.1:4317/?add=1
+                - img [ref=e149]
+                - text: 계정 추가
+            - generic [ref=e150]:
+              - generic [ref=e151]:
+                - img "Telegram" [ref=e153]
+                - generic [ref=e155]:
+                  - generic [ref=e156]: Telegram
+                  - generic [ref=e157]: 전화 코드로 연결
+              - list [ref=e158]:
+                - listitem [ref=e159]:
+                  - generic [ref=e160]: main
+                  - generic [ref=e161]:
+                    - img [ref=e162]
+                    - text: 연결됨
+              - link "계정 추가" [ref=e165] [cursor=pointer]:
+                - /url: http://127.0.0.1:4317/?add=1
+                - img [ref=e166]
+                - text: 계정 추가
+          - paragraph [ref=e167]:
+            - text: 버튼을 눌러도 창이 열리지 않으면(브라우저가 “연결할 수 없음” 표시) 아직 이 컴퓨터에 에이전트가 없는 것입니다 — 아래
+            - strong [ref=e168]: 처음 설치하기
+            - text: 를 따라 주세요. 마법사 주소는
+            - code [ref=e169]: http://127.0.0.1:4317
+            - text: 입니다.
+        - generic [ref=e170]:
+          - generic [ref=e171]:
+            - generic [ref=e172]:
+              - heading "연결 계정 상세" [level=2] [ref=e173]
+              - text: 에이전트가 보고한 계정별 상태와 마지막 동기화 시각입니다(읽기 전용).
+            - generic [ref=e174]:
+              - img [ref=e175]
+              - text: channel_connections
+          - table [ref=e180]:
+            - rowgroup [ref=e181]:
+              - row "채널 계정 라벨 연결한 사람 상태 마지막 동기화 삭제" [ref=e182]:
+                - columnheader "채널" [ref=e183]
+                - columnheader "계정 라벨" [ref=e184]
+                - columnheader "연결한 사람" [ref=e185]
+                - columnheader "상태" [ref=e186]
+                - columnheader "마지막 동기화" [ref=e187]
+                - columnheader "삭제" [ref=e188]
+            - rowgroup [ref=e189]:
+              - row "알리바바 Alibaba enrichtest - 연결됨 2026-06-25 16:24 Alibaba enrichtest 계정 삭제" [ref=e190]:
+                - cell "알리바바 Alibaba" [ref=e191]:
+                  - generic [ref=e192]:
+                    - img "알리바바" [ref=e193]
+                    - generic [ref=e195]: Alibaba
+                - cell "enrichtest" [ref=e196]
+                - cell "-" [ref=e197]
+                - cell "연결됨" [ref=e198]:
+                  - generic [ref=e199]:
+                    - img [ref=e200]
+                    - text: 연결됨
+                - cell "2026-06-25 16:24" [ref=e203]
+                - cell "Alibaba enrichtest 계정 삭제" [ref=e204]:
+                  - button "Alibaba enrichtest 계정 삭제" [ref=e205] [cursor=pointer]:
+                    - img [ref=e206]
+              - row "알리바바 Alibaba first - 연결됨 2026-06-25 20:35 Alibaba first 계정 삭제" [ref=e209]:
+                - cell "알리바바 Alibaba" [ref=e210]:
+                  - generic [ref=e211]:
+                    - img "알리바바" [ref=e212]
+                    - generic [ref=e214]: Alibaba
+                - cell "first" [ref=e215]
+                - cell "-" [ref=e216]
+                - cell "연결됨" [ref=e217]:
+                  - generic [ref=e218]:
+                    - img [ref=e219]
+                    - text: 연결됨
+                - cell "2026-06-25 20:35" [ref=e222]
+                - cell "Alibaba first 계정 삭제" [ref=e223]:
+                  - button "Alibaba first 계정 삭제" [ref=e224] [cursor=pointer]:
+                    - img [ref=e225]
+              - row "알리바바 Alibaba main - 연결됨 2분 전 Alibaba main 계정 삭제" [ref=e228]:
+                - cell "알리바바 Alibaba" [ref=e229]:
+                  - generic [ref=e230]:
+                    - img "알리바바" [ref=e231]
+                    - generic [ref=e233]: Alibaba
+                - cell "main" [ref=e234]
+                - cell "-" [ref=e235]
+                - cell "연결됨" [ref=e236]:
+                  - generic [ref=e237]:
+                    - img [ref=e238]
+                    - text: 연결됨
+                - cell "2분 전" [ref=e241]
+                - cell "Alibaba main 계정 삭제" [ref=e242]:
+                  - button "Alibaba main 계정 삭제" [ref=e243] [cursor=pointer]:
+                    - img [ref=e244]
+              - row "Instagram Instagram main - 연결됨 2026-06-25 20:35 Instagram main 계정 삭제" [ref=e247]:
+                - cell "Instagram Instagram" [ref=e248]:
+                  - generic [ref=e249]:
+                    - img "Instagram" [ref=e250]
+                    - generic [ref=e252]: Instagram
+                - cell "main" [ref=e253]
+                - cell "-" [ref=e254]
+                - cell "연결됨" [ref=e255]:
+                  - generic [ref=e256]:
+                    - img [ref=e257]
+                    - text: 연결됨
+                - cell "2026-06-25 20:35" [ref=e260]
+                - cell "Instagram main 계정 삭제" [ref=e261]:
+                  - button "Instagram main 계정 삭제" [ref=e262] [cursor=pointer]:
+                    - img [ref=e263]
+              - row "Telegram Telegram main - 연결됨 2026-06-25 20:35 Telegram main 계정 삭제" [ref=e266]:
+                - cell "Telegram Telegram" [ref=e267]:
+                  - generic [ref=e268]:
+                    - img "Telegram" [ref=e269]
+                    - generic [ref=e271]: Telegram
+                - cell "main" [ref=e272]
+                - cell "-" [ref=e273]
+                - cell "연결됨" [ref=e274]:
+                  - generic [ref=e275]:
+                    - img [ref=e276]
+                    - text: 연결됨
+                - cell "2026-06-25 20:35" [ref=e279]
+                - cell "Telegram main 계정 삭제" [ref=e280]:
+                  - button "Telegram main 계정 삭제" [ref=e281] [cursor=pointer]:
+                    - img [ref=e282]
+              - row "WhatsApp WhatsApp first - 연결됨 2026-06-25 20:35 WhatsApp first 계정 삭제" [ref=e285]:
+                - cell "WhatsApp WhatsApp" [ref=e286]:
+                  - generic [ref=e287]:
+                    - img "WhatsApp" [ref=e288]
+                    - generic [ref=e290]: WhatsApp
+                - cell "first" [ref=e291]
+                - cell "-" [ref=e292]
+                - cell "연결됨" [ref=e293]:
+                  - generic [ref=e294]:
+                    - img [ref=e295]
+                    - text: 연결됨
+                - cell "2026-06-25 20:35" [ref=e298]
+                - cell "WhatsApp first 계정 삭제" [ref=e299]:
+                  - button "WhatsApp first 계정 삭제" [ref=e300] [cursor=pointer]:
+                    - img [ref=e301]
+        - generic [ref=e304]:
+          - generic [ref=e305]:
+            - generic [ref=e306]:
+              - heading "처음 설치하기" [level=2] [ref=e307]
+              - text: 이 컴퓨터에서 처음 연결한다면 아래 3단계면 끝납니다. 이미 설치했다면 위의 채널 카드에서 바로 연결하세요.
+            - link "릴리스 페이지" [ref=e308] [cursor=pointer]:
+              - /url: https://github.com/meowtivator/qualiflow/releases
+              - img [ref=e309]
+              - text: 릴리스 페이지
+          - list [ref=e313]:
+            - listitem [ref=e314]:
+              - img [ref=e316]
+              - generic [ref=e319]:
+                - generic [ref=e320]: 1. 설치본 내려받기
+                - paragraph [ref=e321]: 내 컴퓨터 운영체제에 맞는 설치본을 내려받습니다.
+                - generic [ref=e322]:
+                  - link "macOS 설치본 받기" [ref=e323] [cursor=pointer]:
+                    - /url: https://github.com/meowtivator/qualiflow/releases/download/agent-v0.3.0/qualiflow-agent-macOS.zip
+                    - img [ref=e324]
+                    - text: macOS 설치본 받기
+                  - link "Windows 설치본 받기" [ref=e327] [cursor=pointer]:
+                    - /url: https://github.com/meowtivator/qualiflow/releases/download/agent-v0.3.0/qualiflow-agent-Windows.zip
+                    - img [ref=e328]
+                    - text: Windows 설치본 받기
+                - paragraph [ref=e331]:
+                  - text: 다운로드가 GitHub 로그인 화면으로 넘어가면 저장소가 비공개인 경우입니다 — 우측 위
+                  - strong [ref=e332]: 릴리스 페이지
+                  - text: 에서 받거나 관리자에게 설치본을 요청하세요.
+            - listitem [ref=e333]:
+              - img [ref=e335]
+              - generic [ref=e338]:
+                - generic [ref=e339]: 2. 설치본 실행하기
+                - paragraph [ref=e340]:
+                  - text: "압축을 풀고 설치 파일을 실행합니다(Windows: install.bat 더블클릭 · macOS: install.command 우클릭 → 열기). 설치가 끝나면"
+                  - strong [ref=e341]: 계정 연결 마법사
+                  - text: 가 브라우저에 자동으로 열립니다. 터미널이나 개발 지식은 필요하지 않습니다.
+            - listitem [ref=e342]:
+              - img [ref=e344]
+              - generic [ref=e347]:
+                - generic [ref=e348]: 3. 페어링 코드 붙여넣기
+                - paragraph [ref=e349]: 아래에서 1회용 코드를 발급받아 마법사 첫 화면에 붙여넣으면 이 대시보드와 내 컴퓨터가 연결됩니다. 이어서 마법사에서 채널(알리바바 로그인 창 · WhatsApp QR · 텔레그램 전화 코드)에 로그인하면 끝 — 이후엔 자동으로 동기화·발송됩니다.
+                - button "페어링 코드 발급" [ref=e351] [cursor=pointer]:
+                  - img [ref=e352]
+                  - text: 페어링 코드 발급
+          - paragraph [ref=e355]:
+            - img [ref=e356]
+            - text: 로그인 세션과 비밀번호급 정보는 내 컴퓨터에만 보관됩니다. 이 대시보드(클라우드)에는 대화 내용과 연결 상태만 올라가고, 로그인 정보는 올라가지 않습니다.
+    - complementary [ref=e359]:
+      - generic [ref=e360]:
+        - heading [level=2] [ref=e361]:
+          - img [ref=e362]
+          - text: LLM CRM 에이전트
+        - paragraph [ref=e365]: DB 조회 결과만 근거로 후속 연락을 제안합니다.
+        - generic [ref=e366]:
+          - generic [ref=e367]:
+            - generic [ref=e368]: 선택된 바이어
+            - link [ref=e369] [cursor=pointer]:
+              - /url: /buyer/0bfd6bc9-b8c8-4a0a-8f95-c36006187c87
+              - text: 상세 보기 →
+          - generic [ref=e370]:
+            - generic [ref=e371]:
+              - generic [ref=e372]: jaeu bag
+              - generic [ref=e373]: jaeu bag · KR · 담당
+            - generic [ref=e374]: B
+          - generic [ref=e375]:
+            - generic [ref=e376]: L1
+            - generic [ref=e377]: 관심고객
+            - generic [ref=e378]: 신규문의
+            - generic [ref=e379]: 미대상
+            - generic [ref=e380]: 마지막 2026-07-01
+          - generic [ref=e382]: 근거 보강 필요
+          - generic [ref=e383]:
+            - link [ref=e384] [cursor=pointer]:
+              - /url: https://www.google.com/search?q=jaeu%20bag%20kr%20facebook
+              - text: Facebook
+            - link [ref=e385] [cursor=pointer]:
+              - /url: https://www.google.com/search?q=jaeu%20bag%20kr%20instagram
+              - text: Instagram
+            - link [ref=e386] [cursor=pointer]:
+              - /url: https://www.google.com/search?q=jaeu%20bag%20kr%20linkedin%20company
+              - text: LinkedIn
+        - generic [ref=e387]:
+          - generic [ref=e388]: 바이어 여정
+          - generic [ref=e389]:
+            - generic [ref=e390]:
+              - generic [ref=e391]: 2026-07-01
+              - generic [ref=e392]: inquiry
+            - generic [ref=e393]:
+              - generic [ref=e394]: 1건
+              - generic [ref=e395]: 접촉
+            - generic [ref=e396]:
+              - generic [ref=e397]: 1일
+              - generic [ref=e398]: 대화 공백
+          - generic [ref=e399]:
+            - generic [ref=e400]: "활성 채널: 알리바바"
+            - generic [ref=e401]: "최대 공백: —일"
+            - generic [ref=e402]: "재개 지점: 공백 재개 없음"
+          - generic [ref=e405]:
+            - generic [ref=e406]:
+              - generic [ref=e407]: 바이어
+              - generic [ref=e408]:
+                - generic [ref=e409]: 6/28
+                - generic [ref=e410]: 7/5
+            - generic [ref=e411]:
+              - button [ref=e412] [cursor=pointer]:
+                - generic [ref=e413]: jaeu bag
+                - generic [ref=e414]: B · jaeu bag · KR
+              - generic [ref=e415]:
+                - button [ref=e416] [cursor=pointer]:
+                  - generic [ref=e417]: 신규문의
+                - button [ref=e418] [cursor=pointer]
+          - generic [ref=e419]:
+            - generic [ref=e420]: 07-01
+            - generic [ref=e421]: 알리바바 · inbound
+        - generic [ref=e422]:
+          - button [ref=e423] [cursor=pointer]: 오늘 연락할 곳
+          - button [ref=e424] [cursor=pointer]: 2주+ 미접촉
+          - button [ref=e425] [cursor=pointer]: 고객사 요약
+        - generic [ref=e426]:
+          - textbox [ref=e428]:
+            - /placeholder: 에이전트에게 질문
+          - button [ref=e429] [cursor=pointer]:
+            - img [ref=e430]
+    - button "AI 에이전트 패널 열기" [ref=e433] [cursor=pointer]:
+      - img [ref=e434]
+  - button "Open Next.js Dev Tools" [ref=e442] [cursor=pointer]:
+    - img [ref=e443]
+  - alert [ref=e446]

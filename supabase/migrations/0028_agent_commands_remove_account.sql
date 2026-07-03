@@ -1,4 +1,4 @@
--- 0027: agent_commands.type 화이트리스트에 'remove_account' 추가 (데이터모델 소유 경계 — 소유자 검토 필요)
+-- 0028: agent_commands.type 화이트리스트에 'remove_account' 추가 (데이터모델 소유 경계 — 소유자 검토 필요)
 --
 -- 배경: 0010 에서 agent_commands.type 은 CHECK (type in ('send_message')) 로 좁게 열려 있다.
 --   웹(bpd)의 '연결 계정 삭제' 기능은 이 큐에 {type:'remove_account', payload:{channel, accountLabel}} 를
