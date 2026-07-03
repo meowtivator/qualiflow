@@ -14,13 +14,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import qrcode from "qrcode-terminal";
 
 import { addAccount, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
-import { CLOUD_BASE_URL } from "../config";
+import { AGENT_VERSION, CLOUD_BASE_URL } from "../config";
 import { buildAuthUrl, exchangeCode } from "../connectors/email";
 import { loginInstagram } from "../connectors/instagram";
 import { loginTelegram, type TelegramAuthPrompts } from "../connectors/telegram";
 import { loginWhatsApp } from "../connectors/whatsapp";
 import { loginAlibaba } from "@qualiflow/adapter-alibaba/runtime";
 import { pair } from "../pair";
+import { latestRelease, performSelfUpdate } from "../self-update";
 import { loadToken } from "../token-store";
 import { WIZARD_HTML } from "./wizard-html";
 
@@ -106,6 +107,19 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(json);
 }
 
+// CRM 웹(crm.thedozers.com 등 다른 오리진)이 브라우저 fetch 로 읽을 수 있게 CORS 허용.
+// ★버전 노출·업데이트 트리거 전용(3개 엔드포인트만) — 시크릿/페어링/상태는 이 헬퍼를 안 쓴다.
+// 서버는 127.0.0.1 바인딩이라 '같은 컴퓨터의 브라우저 탭'만 도달할 수 있다(외부 X). 그래서 * 허용해도
+// 노출되는 건 버전 문자열 + 업데이트 시작뿐. 단순요청(GET, 또는 헤더/바디 없는 POST)이라 프리플라이트 없음.
+function sendCors(res: ServerResponse, status: number, body: unknown): void {
+  const json = JSON.stringify(body);
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "access-control-allow-origin": "*"
+  });
+  res.end(json);
+}
+
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     let raw = "";
@@ -135,6 +149,23 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === "GET" && url === "/api/cloud-url") {
     send(res, 200, { url: CLOUD_BASE_URL });
+    return;
+  }
+
+  // 설치된 에이전트 버전 — CRM 웹이 이 값으로 "설치됨/업데이트 있음"을 판단한다. 시크릿 없음(CORS 허용).
+  if (req.method === "GET" && url === "/api/version") {
+    sendCors(res, 200, { version: AGENT_VERSION, platform: process.platform });
+    return;
+  }
+
+  // 최신 릴리스 버전 조회(GitHub) — 웹이 설치버전과 비교해 "업데이트 있음"을 표시. 실패해도 마법사는 계속.
+  if (req.method === "GET" && url === "/api/latest") {
+    try {
+      const latest = await latestRelease();
+      sendCors(res, 200, { version: latest?.version ?? null });
+    } catch (error) {
+      sendCors(res, 200, { version: null, message: error instanceof Error ? error.message : "조회 실패" });
+    }
     return;
   }
 
@@ -366,6 +397,24 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       connectState.set(key, { kind: "window", status: "error", message: error instanceof Error ? error.message : "토큰 교환 실패" });
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(oauthResultHtml("연결 실패", error instanceof Error ? error.message : "토큰 교환에 실패했습니다."));
+    }
+    return;
+  }
+
+  // 자가 업데이트 — 명시 트리거(웹의 [업데이트] 버튼)로만. 최신 설치본을 받아 임시폴더에 풀고
+  // 설치 파일이 든 폴더를 연다(자동 실행 아님 — 사용자가 install 파일을 실행해 서비스 재등록·재시작).
+  // ★보안: self-update.ts 가 우리 릴리스 URL 화이트리스트 + 원자적 검증을 수행(그 파일 주석 참조).
+  if (req.method === "POST" && url === "/api/self-update") {
+    try {
+      const result = await performSelfUpdate();
+      sendCors(res, 200, {
+        ok: true,
+        version: result.version,
+        folder: result.folder,
+        message: `새 버전 ${result.version} 설치본을 열었습니다. 폴더의 설치 파일을 실행하면 업데이트됩니다.`
+      });
+    } catch (error) {
+      sendCors(res, 200, { ok: false, message: error instanceof Error ? error.message : "업데이트 실패" });
     }
     return;
   }
