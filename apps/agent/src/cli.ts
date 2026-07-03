@@ -275,7 +275,7 @@ async function main() {
         return;
       }
       for (const result of results) {
-        const icon = result.status === "pushed" ? "✅" : result.status === "skipped" ? "⏭️ " : "❌";
+        const icon = result.status === "pushed" || result.status === "registered" ? "✅" : result.status === "skipped" ? "⏭️ " : "❌";
         console.log(`${icon} ${result.channel}/${result.label} — ${result.detail}`);
       }
       return;

@@ -136,7 +136,7 @@ async function watchCycle(): Promise<void> {
     if (results.length) {
       console.log("── push 요약 ──");
       for (const result of results) {
-        const icon = result.status === "pushed" ? "✅" : result.status === "skipped" ? "⏭️ " : "❌";
+        const icon = result.status === "pushed" || result.status === "registered" ? "✅" : result.status === "skipped" ? "⏭️ " : "❌";
         console.log(`   ${icon} ${result.channel}/${result.label} — ${result.detail}`);
       }
     }
