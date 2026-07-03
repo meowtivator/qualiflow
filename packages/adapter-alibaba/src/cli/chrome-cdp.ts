@@ -13,7 +13,14 @@ import { setTimeout as delay } from "node:timers/promises";
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium"
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  // Windows: Chrome 우선, 없으면 Edge(Chromium 기반 → CDP 동일 동작)로 폴백.
+  // C: 하드코딩 대신 환경변수 조합(undefined는 아래 filter(Boolean)이 제거).
+  process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`,
+  process.env["PROGRAMFILES(X86)"] && `${process.env["PROGRAMFILES(X86)"]}\\Google\\Chrome\\Application\\chrome.exe`,
+  process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+  process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}\\Microsoft\\Edge\\Application\\msedge.exe`,
+  process.env["PROGRAMFILES(X86)"] && `${process.env["PROGRAMFILES(X86)"]}\\Microsoft\\Edge\\Application\\msedge.exe`
 ].filter((value): value is string => Boolean(value));
 
 // 크롬 실행파일을 후보들에서 찾는다(없으면 null → 호출부에서 CHROME_PATH 안내).
