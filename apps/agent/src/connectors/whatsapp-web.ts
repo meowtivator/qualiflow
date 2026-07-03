@@ -77,16 +77,54 @@ const STATE_SCRIPT = `(() => {
   return "pending";
 })()`;
 
-// #pane-side 의 채팅 행에서 표시 이름(span[title])을 모은다.
+// #pane-side 의 채팅 행에서 표시 이름(span[title])을 모은다. phone 은 여기서 안 나온다(이름 전용 폴백).
 const ROWS_SCRIPT = `(() => {
   var out = [];
   var lis = document.querySelectorAll("#pane-side [role='listitem']");
   for (var i = 0; i < lis.length; i++) {
     var t = lis[i].querySelector("span[title]");
     var name = t ? (t.getAttribute("title") || "").trim() : "";
-    if (name) out.push({ name: name });
+    if (name) out.push({ phone: "", name: name });
   }
   return out;
+})()`;
+
+// ★핵심 조인 키 = 전화번호. DOM 채팅 행엔 번호가 없어 이름만 얻는다(폴백). 진짜 조인은 WhatsApp Web 의
+//   내부 Chat Store 에서 각 대화의 id.user(=국가코드 포함 전화 숫자)와 표시이름을 함께 읽어야 가능하다.
+//   Store 는 window 에 노출 안 되므로 instagram.ts 처럼 웹팩 모듈 로더(webpackChunk)로 Chat 컬렉션을 꺼낸다.
+//   ★버전 민감: WhatsApp Web 이 웹팩 청크 이름/모듈 모양을 바꾸면 빈 배열이 나올 수 있다 → 그때 DOM 폴백으로 떨어진다.
+//   ★프라이버시: 로그인한 사용자가 이미 보는 대화 목록의 이름/번호만 읽는다(새 정보 캐내지 않음 — AGENTS.md 경계 유지).
+const STORE_SCRIPT = `(() => {
+  try {
+    var chunk = window.webpackChunkwhatsapp_web_client;
+    if (!chunk) return { ok: false, contacts: [] };
+    var mods = {};
+    var id = "qf_" + Date.now();
+    chunk.push([[id], {}, function (req) {
+      for (var k in req.m) { try { mods[k] = req(k); } catch (e) {} }
+    }]);
+    // Chat 컬렉션(_models 배열)을 든 모듈을 찾는다.
+    var chats = null;
+    for (var k in mods) {
+      var m = mods[k];
+      var d = m && (m.default || m);
+      if (d && d.Chat && d.Chat._models) { chats = d.Chat._models; break; }
+      if (d && d._models && d._models[0] && d._models[0].id && "isGroup" in d) { chats = d._models; break; }
+    }
+    if (!chats) return { ok: false, contacts: [] };
+    var out = [];
+    for (var i = 0; i < chats.length; i++) {
+      var c = chats[i];
+      if (!c || (c.isGroup === true)) continue;
+      var wid = c.id || {};
+      var phone = (wid.user || "").replace(/[^0-9]/g, ""); // 전화 숫자(국가코드 포함). @lid 대화는 여기서 빈 값일 수 있음.
+      var name = (c.formattedTitle || c.name || (c.contact && (c.contact.name || c.contact.pushname)) || "").trim();
+      if (phone && name) out.push({ phone: phone, name: name });
+    }
+    return { ok: true, contacts: out };
+  } catch (e) {
+    return { ok: false, contacts: [] };
+  }
 })()`;
 
 // 가상 스크롤 목록을 한 화면씩 내린다.
@@ -124,10 +162,9 @@ export async function pairWhatsAppWeb(profileDir: string): Promise<WhatsAppWebRe
 }
 
 /**
- * 이미 페어링된 세션에서 채팅 목록의 표시 이름을 긁는다(첫 페어링이면 빈 배열 + 안내).
- * ★selectors 는 WhatsApp Web 버전에 민감 — 실세션에서 한 번 검증·보정 필요(아래 evaluate 의 셀렉터).
- * ★phone 추출: 채팅 목록 행에는 전화번호가 안 보이는 경우가 많아(저장명/푸시명만 표시), 전화 매핑은
- *   contact-info 패널 진입 또는 내부 Store 접근으로 보강해야 한다 — 라이브 검증 시 확정.
+ * 이미 페어링된 세션에서 각 대화의 (전화번호, 표시이름)을 긁는다(첫 페어링이면 빈 배열 + 안내).
+ * 1순위 = 내부 Chat Store(전화번호+이름 함께 나옴 → Baileys @lid 조인 가능). 2순위 = DOM 채팅 행(이름만).
+ * ★버전 민감: Store 접근이 실패하면 자동으로 DOM 폴백으로 떨어진다(그땐 phone 이 비어 조인 불가, 이름만).
  */
 export async function scrapeWhatsAppWebNames(
   profileDir: string,
@@ -140,7 +177,21 @@ export async function scrapeWhatsAppWebNames(
       console.log("⚠️ WhatsApp Web 로그인 안 됨 — 먼저 pairWhatsAppWeb 로 QR 스캔이 필요합니다.");
       return [];
     }
-    // 긴 목록은 가상 스크롤이라 한 번에 다 안 잡힌다 → 휠로 내리며 누적.
+    // 1순위: 내부 Store 에서 전화번호+이름을 한 번에(스크롤 불필요 — 컬렉션 전체가 로드돼 있음).
+    const store = (await page
+      .evaluate(STORE_SCRIPT)
+      .catch(() => ({ ok: false, contacts: [] }))) as { ok: boolean; contacts: WhatsAppWebContact[] };
+    if (store.ok && store.contacts.length) {
+      // phone 기준 중복 제거(같은 대화가 두 번 잡히면 뒤엣것이 이김 — 무해).
+      const byPhone = new Map<string, WhatsAppWebContact>();
+      for (const c of store.contacts) {
+        if (c.phone && c.name) byPhone.set(c.phone, c);
+      }
+      console.log(`📇 Store 에서 (번호+이름) ${byPhone.size}건 수집.`);
+      return Array.from(byPhone.values());
+    }
+    // 2순위(폴백): DOM 채팅 행에서 이름만. 긴 목록은 가상 스크롤 → 휠로 내리며 누적.
+    console.log("ℹ️ 내부 Store 접근 실패 — DOM 이름 폴백(전화번호 없음 = @lid 조인 불가, 이름만).");
     const seen = new Map<string, string>();
     for (let i = 0; i < 40; i += 1) {
       const rows = ((await page.evaluate(ROWS_SCRIPT).catch(() => [])) as { name: string }[]) ?? [];
@@ -150,7 +201,6 @@ export async function scrapeWhatsAppWebNames(
       await page.evaluate(SCROLL_SCRIPT).catch(() => undefined);
       await delay(350);
     }
-    // phone 매핑은 라이브 검증에서 확정 — 현재는 이름만 수집(phone 빈 값).
     return Array.from(seen.values()).map((name) => ({ phone: "", name }));
   });
 }

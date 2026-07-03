@@ -7,7 +7,7 @@
 //   - syncFullHistory + 히스토리가 잠잠해질 때까지(debounce) 기다렸다가 ChatRawConversation[]로
 //     정규화해 outputFile 에 쓴다.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
@@ -28,6 +28,7 @@ import makeWASocket, {
 import qrcode from "qrcode-terminal";
 
 import { cacheMedia } from "../media";
+import { scrapeWhatsAppWebNames } from "./whatsapp-web";
 
 // 히스토리가 이 시간(ms)동안 더 안 오면 동기화 끝으로 보고 마무리한다(연결/이벤트마다 리셋).
 // 첫 페어링 직후 히스토리가 늦게 오기도 해서 넉넉히 둔다.
@@ -145,10 +146,10 @@ function countryFlag(iso2: string): string {
     .replace(/[A-Z]/g, (c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65));
 }
 
-// @lid jid 를 전화번호로 풀고 국제표기+국기로 포맷한다(예: "+82 10 5874 5767 🇰🇷").
+// @lid jid → 전화번호 숫자만(국가코드 포함, 예: "821058745767"). 조인 키로 쓴다.
 // Baileys 가 페어링 때 .auth/<세션>/lid-mapping-<lid>_reverse.json 에 lid→전화번호를 로컬 저장해 둔 걸 읽는다.
 // (이 파일들은 세션 디렉터리 안에만 있고 서버로 가지 않는다 — 보안 경계 유지.)
-function resolveLidPhone(jid: string, authDir: string): string | undefined {
+function lidPhoneDigits(jid: string, authDir: string): string | undefined {
   const lidNum = jid.split("@")[0];
   let digits: string;
   try {
@@ -158,29 +159,41 @@ function resolveLidPhone(jid: string, authDir: string): string | undefined {
   } catch {
     return undefined; // 매핑 파일 없음 = 풀 수 없음.
   }
-  if (!/^\d{6,15}$/.test(digits)) return undefined;
+  return /^\d{6,15}$/.test(digits) ? digits : undefined;
+}
+
+// 전화번호 숫자를 국제표기+국기로 포맷한다(예: "+82 10 5874 5767 🇰🇷").
+export function formatPhone(digits: string): string {
   const phone = parsePhoneNumberFromString(`+${digits}`);
   if (!phone) return `+${digits}`; // 파싱 실패해도 최소한 +숫자 로는 보여준다.
   const flag = phone.country ? countryFlag(phone.country) : "";
   return flag ? `${phone.formatInternational()} ${flag}` : phone.formatInternational();
 }
 
-// 이름 우선순위: 저장된 연락처(이름/notify/인증명) → 채팅방 이름 → 상대가 설정한 pushName.
-// ★진짜 이름이 하나도 없을 때: @lid(프라이버시 식별자) 스레드면 의미 없는 lid 숫자 대신 전화번호로 보여준다.
-//   (@lid 는 연락처 맵 키와 어긋나 이름 조회가 빗나가므로 실데이터에선 거의 전부 이 분기로 떨어진다.)
+// 이름 우선순위:
+//   1) 저장된 연락처(이름/notify/인증명) → 채팅방 이름 → 상대 pushName  ← Baileys 가 이름을 준 경우
+//   2) WhatsApp Web 표시이름                                          ← @lid 라 이름이 빈 대부분의 경우
+//   3) 포맷된 전화번호("+82 10 … 🇰🇷")                                ← lid→전화 매핑은 있으나 WA Web 이름은 못 얻음
+//   4) (최후) lid 숫자                                                 ← 매핑도 이름도 없음
+// 2·3 은 모두 @lid → 전화번호 숫자(lidPhoneDigits) 로 조인한다. webNames 는 전화번호 숫자 → WA Web 이름.
 function displayName(
   jid: string,
   contacts: Map<string, Contact>,
   chats: Map<string, Chat>,
   authDir: string,
+  webNames: Map<string, string>,
   pushName?: string
 ): string {
   const contact = contacts.get(jid);
   const named = contact?.name ?? contact?.notify ?? contact?.verifiedName ?? chats.get(jid)?.name ?? pushName;
   if (named) return named;
   if (jid.endsWith("@lid")) {
-    const phone = resolveLidPhone(jid, authDir);
-    if (phone) return phone;
+    const digits = lidPhoneDigits(jid, authDir);
+    if (digits) {
+      const webName = webNames.get(digits); // WhatsApp Web 화면에서 긁은 표시이름
+      if (webName) return webName;
+      return formatPhone(digits);
+    }
   }
   return jid.split("@")[0];
 }
@@ -196,13 +209,32 @@ async function readExistingConversations(file: string): Promise<ChatRawConversat
   }
 }
 
+// WhatsApp Web(웹 화면) 세션이 페어링돼 있으면 그 화면의 표시이름을 긁어 전화번호 숫자 → 이름 맵으로 만든다.
+// 이걸로 @lid 스레드의 이름을 실명화한다. 페어링 안 됐거나 실패하면 빈 맵(=기존 전화번호 폴백 동작 그대로).
+//   ★프로필 디렉터리가 없으면(=한 번도 wa-web pair 안 함) 크롬을 아예 안 띄운다(불필요한 비용/창 방지).
+async function loadWebNames(webProfileDir: string | undefined): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (!webProfileDir || !existsSync(webProfileDir)) return map;
+  try {
+    const contacts = await scrapeWhatsAppWebNames(webProfileDir, { offscreen: true });
+    for (const c of contacts) {
+      if (c.phone && c.name) map.set(c.phone, c.name); // phone = 국가코드 포함 숫자만
+    }
+    if (map.size) console.log(`🔤 WhatsApp Web 표시이름 ${map.size}건 확보 — @lid 스레드 실명화에 사용.`);
+  } catch (error) {
+    console.log(`ℹ️ WhatsApp Web 이름 스크랩 건너뜀: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return map;
+}
+
 export async function fetchWhatsApp(
-  options: { authDir: string; outputFile: string }
+  options: { authDir: string; outputFile: string; webProfileDir?: string }
 ): Promise<ChatRawConversation[]> {
-  const { authDir, outputFile } = options;
+  const { authDir, outputFile, webProfileDir } = options;
   await mkdir(authDir, { recursive: true });
   muteLibsignalNoise(); // libsignal 콘솔 노이즈 가리기(디버그 모드 아니면)
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  const webNames = await loadWebNames(webProfileDir); // @lid → 실명 조인용(없으면 빈 맵)
 
   const chats = new Map<string, Chat>();
   const contacts = new Map<string, Contact>();
@@ -274,7 +306,7 @@ export async function fetchWhatsApp(
         const pushName = list.find((message) => !message.key?.fromMe && message.pushName)?.pushName ?? undefined;
         conversations.push({
           threadId: jid,
-          contact: { id: jid, name: displayName(jid, contacts, chats, authDir, pushName) },
+          contact: { id: jid, name: displayName(jid, contacts, chats, authDir, webNames, pushName) },
           messages
         });
       }
