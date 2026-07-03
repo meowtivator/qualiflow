@@ -19,10 +19,28 @@ TAG="agent-v$VER"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "▶ 0) main 최신화"; git checkout main; git pull
+echo "▶ preflight) gh 권한 확인"
+gh auth status >/dev/null 2>&1 || { echo "  ✗ gh 미로그인 — 'gh auth login' 후 다시 실행"; exit 1; }
+if [ "$(gh api "repos/{owner}/{repo}" --jq '.permissions.push' 2>/dev/null)" != "true" ]; then
+  echo "  ✗ 이 gh 계정에 릴리스/푸시 권한이 없습니다(push=false). 권한 있는 계정으로 'gh auth login' 하세요."
+  echo "    (지난번 '권한 없음'이 이거였을 가능성 — 여기서 먼저 걸러집니다.)"; exit 1
+fi
 
-echo "▶ 1) 태그 $TAG"
-if git rev-parse "$TAG" >/dev/null 2>&1; then echo "  이미 있음 — 재사용"; else git tag "$TAG" main; git push origin "$TAG"; fi
+echo "▶ 0) main 최신화"; git checkout main; git pull
+MAIN_SHA="$(git rev-parse main)"
+
+echo "▶ 1) 태그 $TAG → main 최신($(git rev-parse --short main))"
+if git rev-parse "$TAG" >/dev/null 2>&1 && [ "$(git rev-parse "$TAG")" = "$MAIN_SHA" ]; then
+  echo "  태그가 이미 main 최신 — 재사용"
+else
+  # 태그가 없거나 옛 커밋을 가리키면 main 최신으로 (재)설정. 미완 릴리스가 있으면 함께 정리.
+  if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo "  ⚠ 태그가 옛 커밋을 가리킴 → main 최신으로 이동(스테일 릴리스 방지)"
+    gh release delete "$TAG" --yes 2>/dev/null || true   # 미완/구 릴리스 정리
+  fi
+  git tag -f "$TAG" main
+  git push -f origin "$TAG"
+fi
 
 echo "▶ 2) build-agent CI (version=$TAG 주입)"
 gh workflow run build-agent.yml --ref "$TAG" --field version="$TAG"
