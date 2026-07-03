@@ -43,6 +43,10 @@ assert.ok(bat.includes('xcopy "C:\\Temp\\qf update\\package\\*" "%LOCALAPPDATA%\
 assert.equal((bat.match(/schtasks \/End/g) ?? []).length, 3, "상주 3개를 모두 정지해야 한다(파일락 해제)");
 assert.equal((bat.match(/schtasks \/Run/g) ?? []).length, 3, "상주 3개를 모두 재시작해야 한다");
 assert.ok(/ping 127\.0\.0\.1 -n \d+/.test(bat), "정지 후 핸들 해제 대기(ping)가 있어야 한다");
+// 파일락 대비 재시도 루프: 락 미해제로 한 번 실패해도 부분 교체가 안 되게 xcopy 를 반복해야 한다.
+assert.ok(bat.includes(":qf_copy") && bat.includes("goto qf_copy"), "xcopy 재시도 루프(라벨+goto)가 있어야 한다");
+assert.ok(bat.includes("if not errorlevel 1 goto qf_copied"), "복사 성공(errorlevel 0) 시에만 재시작으로 넘어가야 한다");
+assert.ok(/if %QF_TRY% geq \d+ goto qf_copied/.test(bat), "재시도 상한(초과 시 best-effort 재시작)이 있어야 한다");
 assert.ok(bat.includes("\r\n") && bat.endsWith("\r\n"), "배치는 CRLF 줄바꿈이어야 한다(cmd.exe)");
 
 console.log("✅ self-update.selfcheck 통과 — 최신:", latest.version, "· apply-update.bat 생성 OK");
