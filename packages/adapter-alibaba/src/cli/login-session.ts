@@ -22,21 +22,20 @@ import { dirname, resolve } from "node:path";
 
 import { chromium } from "playwright-core";
 
-import { dataFile, delay, findChrome, spawnChrome, waitForCdp } from "./chrome-cdp";
+import { dataFile, delay, findChrome, findFreePort, spawnChrome, waitForCdp } from "./chrome-cdp";
 
 // 설치본에선 QUALIFLOW_HOME/.data 로, 개발에선 레포 apps/web/.data 로 떨어진다(cwd-상대 버그 제거).
 const CONNECTION_STATUS_FILE = dataFile("alibaba-connection.json");
 // 로그인 페이지가 아니라 onetalk을 직접 연다. 로그인 안 됐으면 알리바바가 로그인으로 보냈다가
 // 로그인 성공 시 다시 onetalk으로 돌려보낸다(= 로그인 시작점이 onetalk이라 복귀 대상이 생긴다).
 const ONETALK_URL = "https://onetalk.alibaba.com/message/weblitePWA.htm?hideMenu=1#/";
-const DEBUG_PORT = 9222;
 const LOGIN_TIMEOUT_MS = Number(process.env.QUALIFLOW_LOGIN_TIMEOUT_MS) || 5 * 60 * 1000;
 
 // ★로그인 감지: URL만 보면 onetalk을 '여는 순간'의 주소를 로그인됨으로 오인한다(리다이렉트 전 레이스).
 //   그래서 실제로 인박스(대화 목록 .contact-item-container)가 떴는지 CDP로 확인한다.
 //   빈 계정 대비: onetalk(로그인 페이지 아님) 상태가 ~12초 안정 유지되면 로그인으로 인정.
-async function waitForLogin(timeoutMs: number): Promise<boolean> {
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
+async function waitForLogin(timeoutMs: number, port: number): Promise<boolean> {
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   try {
     const context = browser.contexts()[0];
     const startedAt = Date.now();
@@ -70,8 +69,8 @@ async function waitForLogin(timeoutMs: number): Promise<boolean> {
 
 // ★로그인된 크롬에서 살아있는 쿠키 전부를 CDP로 읽어 파일에 저장한다(세션 쿠키 포함 — 이게 핵심).
 //   크롬 프로필만 믿으면 SIGTERM 시 세션 쿠키가 디스크에 안 굳어 사라지므로, 명시적으로 백업한다.
-async function saveSessionCookies(file: string): Promise<number> {
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
+async function saveSessionCookies(file: string, port: number): Promise<number> {
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   try {
     const context = browser.contexts()[0];
     const cookies = await context.cookies(); // 인자 없으면 컨텍스트의 모든 도메인 쿠키(httpOnly 포함)
@@ -119,8 +118,11 @@ export async function loginAlibaba(profileDir: string): Promise<void> {
 
   await mkdir(profileDir, { recursive: true });
 
+  // ★빈 포트를 새로 받아 쓴다(9222 고정 X). 안 그러면 백그라운드 동기화(watch)가 그 포트로 크롬을
+  //   이미 띄운 순간 로그인 창이 포트를 못 잡아 조용히 실패한다("계정만 추가되고 로그인 안 뜸"의 원인).
+  const port = await findFreePort();
   // 자동화 플래그 없이 "그냥 크롬"을 띄운다(상세 이유는 chrome-cdp.ts 주석 참고). 로그인은 사람이 봐야 함.
-  const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, ONETALK_URL);
+  const chrome = spawnChrome(chromePath, profileDir, port, ONETALK_URL);
 
   console.log("\n순수 크롬 창이 떴어요 — 자동화 흔적이 없어서 슬라이더 CAPTCHA가 정상 동작합니다.");
   console.log("⚠️ '대화가 있는 셀러 계정'으로 직접 로그인하세요(슬라이더도 직접 밀기).");
@@ -128,18 +130,18 @@ export async function loginAlibaba(profileDir: string): Promise<void> {
   console.log("onetalk.alibaba.com 을 직접 입력해도 됩니다 — 대화 화면이 뜨면 자동으로 감지합니다.");
   console.log("(Enter 누를 필요 없어요. 인박스 대화가 뜨면 자동 감지. 최대 5분 대기.)\n");
 
-  if (!(await waitForCdp(DEBUG_PORT))) {
+  if (!(await waitForCdp(port))) {
     chrome.kill("SIGTERM");
     throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 있으면 닫고 다시 시도하세요.");
   }
 
-  if (await waitForLogin(LOGIN_TIMEOUT_MS)) {
+  if (await waitForLogin(LOGIN_TIMEOUT_MS, port)) {
     // ★감지 직후 바로 닫으면 세션 쿠키/토큰이 프로필에 다 안 굳어 추출 때 '로그인 페이지'로 튄다.
     //   몇 초 안정화 + SIGTERM 후 디스크 flush 시간을 준다.
     console.log("\n✅ 로그인 감지됨 — 세션을 프로필에 저장하는 중(약 10초, 닫지 마세요)...");
     await delay(8000);
     try {
-      const cookieCount = await saveSessionCookies(cookiesFile);
+      const cookieCount = await saveSessionCookies(cookiesFile, port);
       console.log(`세션 쿠키 ${cookieCount}개를 백업했습니다(추출 때 재주입).`);
     } catch (error) {
       console.error(`쿠키 백업 실패(프로필 쿠키로 폴백): ${error instanceof Error ? error.message : String(error)}`);
