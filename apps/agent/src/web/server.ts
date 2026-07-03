@@ -14,13 +14,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import qrcode from "qrcode-terminal";
 
 import { addAccount, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
-import { CLOUD_BASE_URL } from "../config";
+import { AGENT_VERSION, CLOUD_BASE_URL } from "../config";
 import { buildAuthUrl, exchangeCode } from "../connectors/email";
 import { loginInstagram } from "../connectors/instagram";
 import { loginTelegram, type TelegramAuthPrompts } from "../connectors/telegram";
 import { loginWhatsApp } from "../connectors/whatsapp";
 import { loginAlibaba } from "@qualiflow/adapter-alibaba/runtime";
 import { pair } from "../pair";
+import { latestRelease, performSelfUpdate } from "../self-update";
 import { loadToken } from "../token-store";
 import { WIZARD_HTML } from "./wizard-html";
 
@@ -108,6 +109,48 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(json);
 }
 
+// CRM 웹(crm.thedozers.com 등 다른 오리진)이 브라우저 fetch 로 읽을 수 있게 CORS 허용.
+// ★버전 노출·업데이트 트리거 전용(3개 엔드포인트만) — 시크릿/페어링/상태는 이 헬퍼를 안 쓴다.
+// 서버는 127.0.0.1 바인딩이라 '같은 컴퓨터의 브라우저 탭'만 도달할 수 있다(외부 X). 하지만 그 탭이
+// '대표가 방문한 아무 웹사이트'일 수도 있어(CSRF), self-update 같은 상태변경은 * 로 열면 위험하다.
+// → 허용 Origin 화이트리스트로 좁힌다: 로컬 마법사 자신 + CRM(로컬/배포). 그 외 Origin 은 CORS 헤더를
+//   안 붙이거나(읽기) 403 으로 거부(self-update). credentials 는 안 쓰므로 echo 방식으로 충분.
+const ALLOWED_ORIGINS = new Set(
+  [
+    "https://crm.thedozers.com",
+    `http://${HOST}:${PORT}`,
+    `http://localhost:${PORT}`,
+    // 설치본 CLOUD_URL(배포 CRM 오리진). 프로토콜+호스트만(경로/포트 포함) — new URL 로 정규화.
+    (() => {
+      try {
+        return new URL(CLOUD_BASE_URL).origin;
+      } catch {
+        return "";
+      }
+    })()
+  ].filter(Boolean)
+);
+
+// 요청 Origin 이 화이트리스트면 그 값을, 아니면 null(=CORS 헤더 안 붙임).
+function allowedOrigin(req: IncomingMessage): string | null {
+  const origin = req.headers.origin;
+  return typeof origin === "string" && ALLOWED_ORIGINS.has(origin) ? origin : null;
+}
+
+// 읽기 전용(version/latest)용 — 허용 Origin 이면 그 Origin 을 echo, 아니면 CORS 헤더 없이 응답한다.
+//   (CORS 헤더가 없으면 타 오리진 브라우저 fetch 는 응답을 못 읽지만, 서버는 500 을 안 낸다.)
+function sendCors(res: ServerResponse, status: number, body: unknown, req: IncomingMessage): void {
+  const json = JSON.stringify(body);
+  const origin = allowedOrigin(req);
+  const headers: Record<string, string> = { "content-type": "application/json; charset=utf-8" };
+  if (origin) {
+    headers["access-control-allow-origin"] = origin;
+    headers["vary"] = "Origin"; // Origin 별로 응답이 달라지므로 캐시 오염 방지.
+  }
+  res.writeHead(status, headers);
+  res.end(json);
+}
+
 async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
     let raw = "";
@@ -137,6 +180,23 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === "GET" && url === "/api/cloud-url") {
     send(res, 200, { url: CLOUD_BASE_URL });
+    return;
+  }
+
+  // 설치된 에이전트 버전 — CRM 웹이 이 값으로 "설치됨/업데이트 있음"을 판단한다. 시크릿 없음(CORS 허용).
+  if (req.method === "GET" && url === "/api/version") {
+    sendCors(res, 200, { version: AGENT_VERSION, platform: process.platform }, req);
+    return;
+  }
+
+  // 최신 릴리스 버전 조회(GitHub) — 웹이 설치버전과 비교해 "업데이트 있음"을 표시. 실패해도 마법사는 계속.
+  if (req.method === "GET" && url === "/api/latest") {
+    try {
+      const latest = await latestRelease();
+      sendCors(res, 200, { version: latest?.version ?? null }, req);
+    } catch (error) {
+      sendCors(res, 200, { version: null, message: error instanceof Error ? error.message : "조회 실패" }, req);
+    }
     return;
   }
 
@@ -381,6 +441,46 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       connectState.set(key, { kind: "window", status: "error", message: error instanceof Error ? error.message : "토큰 교환 실패" });
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
       res.end(oauthResultHtml("연결 실패", error instanceof Error ? error.message : "토큰 교환에 실패했습니다."));
+    }
+    return;
+  }
+
+  // CORS 프리플라이트(브라우저가 non-simple 요청 전에 보냄) — 허용 Origin 이면 그 Origin+메서드를 echo,
+  // 아니면 CORS 헤더 없이 204(브라우저가 실제 요청을 막는다). self-update/version/latest 공통.
+  if (req.method === "OPTIONS" && (url === "/api/self-update" || url === "/api/version" || url === "/api/latest")) {
+    const origin = allowedOrigin(req);
+    const headers: Record<string, string> = { vary: "Origin" };
+    if (origin) {
+      headers["access-control-allow-origin"] = origin;
+      headers["access-control-allow-methods"] = "GET, POST, OPTIONS";
+      headers["access-control-allow-headers"] = "content-type";
+      headers["access-control-max-age"] = "600";
+    }
+    res.writeHead(204, headers);
+    res.end();
+    return;
+  }
+
+  // 자가 업데이트 — 명시 트리거(웹의 [업데이트] 버튼)로만. 최신 설치본을 받아 임시폴더에 풀고
+  // 설치 파일이 든 폴더를 연다(자동 실행 아님 — 사용자가 install 파일을 실행해 서비스 재등록·재시작).
+  // ★보안: self-update.ts 가 우리 릴리스 URL 화이트리스트 + 원자적 검증을 수행(그 파일 주석 참조).
+  if (req.method === "POST" && url === "/api/self-update") {
+    // ★CSRF 완화: 상태변경이므로 요청 Origin 이 화이트리스트일 때만 처리. Origin 없음(브라우저 fetch 는
+    //   항상 붙임 → 없으면 스크립트/서버간 호출)도 거부해 '아무 웹사이트가 트리거'를 막는다.
+    if (!allowedOrigin(req)) {
+      sendCors(res, 403, { ok: false, message: "허용되지 않은 출처(Origin)입니다 — 업데이트를 거부합니다." }, req);
+      return;
+    }
+    try {
+      const result = await performSelfUpdate();
+      sendCors(res, 200, {
+        ok: true,
+        version: result.version,
+        folder: result.folder,
+        message: `새 버전 ${result.version} 설치본을 열었습니다. 폴더의 설치 파일을 실행하면 업데이트됩니다.`
+      }, req);
+    } catch (error) {
+      sendCors(res, 200, { ok: false, message: error instanceof Error ? error.message : "업데이트 실패" }, req);
     }
     return;
   }

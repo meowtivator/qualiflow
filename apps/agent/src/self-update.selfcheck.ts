@@ -1,0 +1,39 @@
+// 자가 업데이트 자가 점검 — 프레임워크 없이 node:assert. 네트워크 없이 fetch 를 스텁해
+// latestRelease 의 '최신 정식 릴리스 선택'과 isUpdateAvailable 의 버전 비교를 검증한다.
+//   실행: pnpm --filter @qualiflow/agent exec tsx src/self-update.selfcheck.ts
+// 로직이 깨지면 assert 가 던진다(깨진 채로 "통과"하지 않게).
+
+import assert from "node:assert/strict";
+
+import { isUpdateAvailable, latestRelease } from "./self-update";
+
+// 버전 비교 — 미배포(dev)는 항상 false, 낮은→높은만 true.
+assert.equal(isUpdateAvailable("0.3.0", "0.3.1"), true, "패치 올라가면 업데이트 있음");
+assert.equal(isUpdateAvailable("0.3.0", "1.0.0"), true, "메이저 올라가면 업데이트 있음");
+assert.equal(isUpdateAvailable("0.3.0", "0.3.0"), false, "같은 버전은 업데이트 없음");
+assert.equal(isUpdateAvailable("0.4.0", "0.3.9"), false, "설치가 최신보다 높으면 업데이트 없음");
+assert.equal(isUpdateAvailable("dev", "0.3.0"), false, "dev(미배포)는 비교 안 함");
+
+// latestRelease — draft/prerelease/자산없음/구버전 태그를 걸러 '가장 높은 정식 버전'을 고른다.
+const ASSET = process.platform === "win32" ? "qualiflow-agent-Windows.zip" : "qualiflow-agent-macOS.zip";
+const dl = (tag: string) => `https://github.com/meowtivator/qualiflow/releases/download/${tag}/${ASSET}`;
+globalThis.fetch = (async () =>
+  ({
+    ok: true,
+    status: 200,
+    url: "",
+    json: async () => [
+      { tag_name: "agent-v0.9.0", draft: true, prerelease: false, assets: [{ name: ASSET, browser_download_url: dl("agent-v0.9.0") }] },
+      { tag_name: "agent-v0.8.0", draft: false, prerelease: true, assets: [{ name: ASSET, browser_download_url: dl("agent-v0.8.0") }] },
+      { tag_name: "agent-v0.5.0", draft: false, prerelease: false, assets: [{ name: "other.zip", browser_download_url: "x" }] },
+      { tag_name: "agent-v0.4.0", draft: false, prerelease: false, assets: [{ name: ASSET, browser_download_url: dl("agent-v0.4.0") }] },
+      { tag_name: "agent-v0.3.0", draft: false, prerelease: false, assets: [{ name: ASSET, browser_download_url: dl("agent-v0.3.0") }] }
+    ]
+  }) as unknown as Response) as typeof fetch;
+
+const latest = await latestRelease();
+assert.ok(latest, "정식 릴리스가 있어야 한다");
+assert.equal(latest.version, "0.4.0", "draft/prerelease/자산없음 제외 후 가장 높은 정식 = 0.4.0");
+assert.ok(latest.url.startsWith("https://github.com/meowtivator/qualiflow/releases/download/"), "다운로드 URL 은 우리 릴리스 화이트리스트 접두사");
+
+console.log("✅ self-update.selfcheck 통과 — 최신:", latest.version);

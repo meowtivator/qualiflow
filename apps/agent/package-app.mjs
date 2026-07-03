@@ -56,12 +56,17 @@ console.log(`③ Node 바이너리 동봉(${nodeName})`);
 const CLOUD_URL = process.env.QUALIFLOW_CLOUD_URL || "https://crm.thedozers.com";
 const TG_API_ID = process.env.TELEGRAM_API_ID || "";
 const TG_API_HASH = process.env.TELEGRAM_API_HASH || "";
+// 설치본 버전 = 릴리스 태그의 X.Y.Z. 우선순위: AGENT_VERSION env(릴리스 CI가 태그로 지정) →
+// 로컬 git 최신 agent-v* 태그 → "dev". 이 값을 런처에 QUALIFLOW_AGENT_VERSION 으로 주입한다.
+const AGENT_VERSION = resolveAgentVersion();
+console.log(`④ 버전 주입: ${AGENT_VERSION}`);
 writeFileSync(
   resolve(out, "run.sh"),
   `#!/bin/bash
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export QUALIFLOW_HOME="\${QUALIFLOW_HOME:-$HOME/.qualiflow}"
 export QUALIFLOW_CLOUD_URL="\${QUALIFLOW_CLOUD_URL:-${CLOUD_URL}}"
+export QUALIFLOW_AGENT_VERSION="\${QUALIFLOW_AGENT_VERSION:-${AGENT_VERSION}}"
 export QUALIFLOW_WATCH_INTERVAL_MS="\${QUALIFLOW_WATCH_INTERVAL_MS:-60000}"
 export TELEGRAM_API_ID="\${TELEGRAM_API_ID:-${TG_API_ID}}"
 export TELEGRAM_API_HASH="\${TELEGRAM_API_HASH:-${TG_API_HASH}}"
@@ -74,7 +79,22 @@ if (process.platform !== "win32") {
 }
 writeFileSync(
   resolve(out, "run.cmd"),
-  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not defined QUALIFLOW_CLOUD_URL set "QUALIFLOW_CLOUD_URL=${CLOUD_URL}"\r\nif not defined QUALIFLOW_WATCH_INTERVAL_MS set "QUALIFLOW_WATCH_INTERVAL_MS=60000"\r\nif not defined TELEGRAM_API_ID set "TELEGRAM_API_ID=${TG_API_ID}"\r\nif not defined TELEGRAM_API_HASH set "TELEGRAM_API_HASH=${TG_API_HASH}"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
+  `@echo off\r\nset "QUALIFLOW_HOME=%USERPROFILE%\\.qualiflow"\r\nif not defined QUALIFLOW_CLOUD_URL set "QUALIFLOW_CLOUD_URL=${CLOUD_URL}"\r\nif not defined QUALIFLOW_AGENT_VERSION set "QUALIFLOW_AGENT_VERSION=${AGENT_VERSION}"\r\nif not defined QUALIFLOW_WATCH_INTERVAL_MS set "QUALIFLOW_WATCH_INTERVAL_MS=60000"\r\nif not defined TELEGRAM_API_ID set "TELEGRAM_API_ID=${TG_API_ID}"\r\nif not defined TELEGRAM_API_HASH set "TELEGRAM_API_HASH=${TG_API_HASH}"\r\nif not exist "%QUALIFLOW_HOME%" mkdir "%QUALIFLOW_HOME%"\r\n"%~dp0node.exe" "%~dp0agent.mjs" %*\r\n`
 );
+
+// 릴리스 태그 → 버전 문자열. env(CI) 우선, 없으면 로컬 git 태그, 둘 다 없으면 "dev".
+function resolveAgentVersion() {
+  const fromEnv = (process.env.AGENT_VERSION || "").trim().replace(/^agent-v/, "");
+  if (fromEnv) return fromEnv;
+  try {
+    const tag = execSync("git describe --tags --abbrev=0 --match 'agent-v*'", { cwd: here, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+    if (tag) return tag.replace(/^agent-v/, "");
+  } catch {
+    // git 없음/태그 없음 — dev 로 둔다(웹이 "미배포"로 처리).
+  }
+  return "dev";
+}
 
 console.log("✅ 배포 폴더 완성: apps/agent/dist/package/  →  run.sh / run.cmd <명령>");
