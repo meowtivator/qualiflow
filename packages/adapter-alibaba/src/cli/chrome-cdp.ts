@@ -115,5 +115,17 @@ export function spawnChrome(
     args.push("--headless=new", `--user-agent=${CHROME_UA}`);
   }
   args.push(url);
-  return spawn(chromePath, args, { stdio: "ignore" });
+  // ★Windows: detached:false + stdio:"ignore" 로 띄우면 자식 크롬이 부모 Node 프로세스에 묶인다.
+  //   부모 문맥이 종료/에러로 정리되는 순간 크롬 창도 함께 닫혀 "열렸다가 바로 꺼짐"으로 보인다.
+  //   detached:true + .unref() 로 부모와 독립시켜 로그인 창이 사용자 조작 동안 유지되게 한다.
+  //   (callers 의 명시적 chrome.kill 은 그대로 동작 — 우리가 추적하는 자식은 여전히 죽일 수 있다.)
+  // ★디버그: QUALIFLOW_DEBUG_CHROME=1 이면 크롬 stderr 를 부모로 흘려보내 조용히 묻히던 실패 원인을 노출.
+  //   (기본은 "ignore" — 크롬 로그가 콘솔을 오염시키지 않게. waitForCdp 타임아웃만으로는 원인이 안 보였다.)
+  const debug = process.env.QUALIFLOW_DEBUG_CHROME === "1";
+  const child = spawn(chromePath, args, {
+    detached: true,
+    stdio: debug ? ["ignore", "ignore", "inherit"] : "ignore"
+  });
+  child.unref();
+  return child;
 }
