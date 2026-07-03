@@ -22,7 +22,11 @@ function getApiCreds(): { apiId: number; apiHash: string } {
   const apiId = Number(process.env.TELEGRAM_API_ID);
   const apiHash = process.env.TELEGRAM_API_HASH ?? "";
   if (!apiId || !apiHash) {
-    throw new Error("TELEGRAM_API_ID / TELEGRAM_API_HASH 가 없습니다. apps/web/.env.local 에 넣으세요.");
+    throw new Error(
+      "텔레그램 자격증명(TELEGRAM_API_ID / TELEGRAM_API_HASH)이 없습니다. 페어링이 되어 있는지 확인하세요" +
+        "('pair <코드>' 후 다시 시도) — 페어링되면 클라우드에서 자동으로 받아옵니다. " +
+        "개발자는 apps/web/.env.local 로 직접 지정할 수도 있습니다."
+    );
   }
   return { apiId, apiHash };
 }
