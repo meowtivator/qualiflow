@@ -10,6 +10,10 @@ on:
       - "packages/**"
       - ".github/workflows/build-agent.yml"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "릴리스 버전 태그(예: agent-v0.3.1). 비우면 git 태그(git describe)로 자동 판정."
+        required: false
 
 jobs:
   build:
@@ -37,7 +41,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # 버전 스탬프: workflow_dispatch 로 version 을 주면 그 값을(릴리스), 없으면 빈 값 →
+      # package-app.mjs 가 git describe 로 자동 판정(일반 push 빌드). 빈 문자열은 무시된다.
       - name: Build distributable
+        env:
+          AGENT_VERSION: ${{ github.event.inputs.version }}
         run: pnpm --filter @qualiflow/agent ${{ matrix.script }}
 
       # 동봉 node로 번들이 실제로 도는지(=external 의존성 해석 + 임포트 OK) 확인. 계정 없으면 "없음" + exit 0.
