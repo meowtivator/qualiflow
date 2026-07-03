@@ -111,9 +111,10 @@ writeFileSync(
     "  echo Opened the setup wizard in your browser.",
     "  echo This window closes by itself - background sync/send/wizard keep running.",
     "  rem Success: install is done and the 3 tasks run independently under Task Scheduler,",
-    "  rem so this window is safe to close. Auto-close after 5s so no stray cmd lingers all day",
+    "  rem so this window is safe to close. Auto-close after ~5s so no stray cmd lingers all day",
     "  rem (the reported 'cmd left on all day' was THIS install window sitting on pause).",
-    "  timeout /t 5 /nobreak >nul",
+    "  rem Use ping (not timeout) to wait: timeout errors when stdin is redirected; ping never does.",
+    "  ping -n 6 127.0.0.1 >nul",
     ")"
   ].join(CRLF) + CRLF
 );
