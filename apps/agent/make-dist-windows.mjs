@@ -4,7 +4,7 @@
 //     - watch(실시간 fetch→클라우드 push, 인박스 최신화)
 //     - serve(대시보드가 보낸 답장 발송)
 //     - wizard(설정 UI 를 localhost:4317 에 항상 띄움 — 웹 "채널 추가" 버튼이 여는 화면)
-//   설치 끝에 브라우저를 localhost:4317(상주 마법사)로 열어 코드 페어링 + 채널 로그인.
+//   설치 끝에 마법사(4317)가 실제로 응답할 때까지 기다렸다가 브라우저를 연다(첫 실행 콜드스타트 대비).
 
 import { execSync } from "node:child_process";
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -59,9 +59,20 @@ writeFileSync(
     "echo 이제 설정 마법사를 엽니다 - 브라우저에서 '코드 붙여넣기(페어링) + 채널 로그인'만 하면 끝입니다.",
     "echo (이 창을 닫아도 백그라운드 동기화는 계속됩니다. 나중엔 CRM 웹의 '채널 추가' 버튼으로도 열려요.)",
     "echo.",
-    "rem 상주 마법사가 4317 을 잡을 시간을 잠깐 준 뒤, 브라우저를 그 로컬 마법사로 연다.",
-    "timeout /t 3 >nul",
-    'start "" "http://127.0.0.1:4317"',
+    "rem 마법사(4317)가 '실제로 응답할 때까지' 기다렸다가 브라우저를 연다. 첫 실행은 node 콜드스타트+",
+    "rem 백신 검사로 3초보다 오래 걸려서, 고정 대기로는 '연결 거부'가 떴다. 포트가 열리면 즉시 연다(최대 20초).",
+    "echo 설정 마법사를 준비하는 중입니다(최대 20초)...",
+    'powershell -NoProfile -Command "for($i=0;$i -lt 40;$i++){try{$c=New-Object Net.Sockets.TcpClient;$c.Connect(\'127.0.0.1\',4317);$c.Close();exit 0}catch{Start-Sleep -Milliseconds 500}};exit 1"',
+    "if errorlevel 1 (",
+    "  echo.",
+    "  echo [안내] 마법사가 20초 안에 준비되지 않았습니다.",
+    "  echo   - 잠시 후 브라우저에서 http://127.0.0.1:4317 을 새로고침해 보세요.",
+    "  echo   - 그래도 안 열리면 이 창에 아래 한 줄을 붙여넣어 원인을 확인하세요:",
+    '  echo       "%DEST%\\run.cmd" wizard',
+    ") else (",
+    '  start "" "http://127.0.0.1:4317"',
+    "  echo 설정 마법사를 브라우저에서 열었습니다.",
+    ")",
     "pause"
   ].join(CRLF) + CRLF
 );
