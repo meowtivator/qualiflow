@@ -42,7 +42,7 @@ async function readConversations(channel: string, label: string): Promise<unknow
 export type PushResult = {
   channel: string;
   label: string;
-  status: "pushed" | "skipped" | "error";
+  status: "pushed" | "registered" | "skipped" | "error";
   detail: string;
 };
 
@@ -63,18 +63,10 @@ async function resolveConversationMedia(channel: string, conversations: IngestCo
   }
 }
 
-async function pushAccount(channel: string, label: string): Promise<PushResult> {
-  const raw = await readConversations(channel, label);
-  if (raw === null) {
-    return { channel, label, status: "skipped", detail: "대화 파일 없음(먼저 fetch)" };
-  }
-  const normalizer = NORMALIZERS[channel];
-  const conversations = normalizer ? normalizer(raw) : isNormalized(raw) ? raw : null;
-  if (!conversations || conversations.length === 0) {
-    return { channel, label, status: "skipped", detail: "정규화 결과 없음/미지원 형태" };
-  }
-  // 미디어: 메시지의 pending 첨부(로컬 캐시)를 서버로 올려 stored URL로 갱신한 뒤 ingest로 보낸다.
-  await resolveConversationMedia(channel, conversations);
+// 대화 배열을 서버로 ingest한다. conversations=[](빈 배열)이면 RPC(0009)가 대화 루프 전에
+// channel_connections 를 status='active' 로 find-or-create 만 하고 lead/thread/msg 는 0 → '연결 등록'만 트리거.
+//   (parseIngestRequest 는 빈 배열을 통과시킨다 — 코어 계약 무변경.)
+async function ingest(channel: string, label: string, conversations: IngestConversation[]): Promise<PushResult> {
   try {
     const response = await authedFetch("/api/agents/ingest", {
       method: "POST",
@@ -85,15 +77,35 @@ async function pushAccount(channel: string, label: string): Promise<PushResult> 
     if (!response.ok || !data.ok) {
       return { channel, label, status: "error", detail: data.message ?? `HTTP ${response.status}` };
     }
+    // 빈 배열 등록은 lead/thread/msg 가 0 → "연결됨"으로 구분해 표시(pushed 는 실제 대화가 올라간 것).
+    const status = conversations.length === 0 ? "registered" : "pushed";
     return {
       channel,
       label,
-      status: "pushed",
-      detail: `lead+${data.leadsCreated ?? 0} thread+${data.threadsCreated ?? 0} msg+${data.messagesCreated ?? 0}`
+      status,
+      detail:
+        status === "registered"
+          ? "연결 등록(메시지 0건)"
+          : `lead+${data.leadsCreated ?? 0} thread+${data.threadsCreated ?? 0} msg+${data.messagesCreated ?? 0}`
     };
   } catch (error) {
     return { channel, label, status: "error", detail: error instanceof Error ? error.message : String(error) };
   }
+}
+
+// 단일 계정 push. 대화가 있으면 그걸 올리고, 없으면(파일 없음/정규화 0건) 빈 ingest 1회로 클라우드 연결만 등록.
+//   ★비즈니스 규칙: 로그인만 하고 메시지 0건인 계정도 클라우드(channel_connections)에 status='active' 로 등록한다.
+//     (연결흐름 개편: 로그인 성공 = 클라우드 등록. 예전엔 대화가 있어야만 등록돼 프론트와 어긋났다.)
+export async function pushAccount(channel: string, label: string): Promise<PushResult> {
+  const raw = await readConversations(channel, label);
+  const normalizer = NORMALIZERS[channel];
+  const conversations = raw === null ? null : normalizer ? normalizer(raw) : isNormalized(raw) ? raw : null;
+  if (!conversations || conversations.length === 0) {
+    return ingest(channel, label, []); // 빈 등록(find-or-create만)
+  }
+  // 미디어: 메시지의 pending 첨부(로컬 캐시)를 서버로 올려 stored URL로 갱신한 뒤 ingest로 보낸다.
+  await resolveConversationMedia(channel, conversations);
+  return ingest(channel, label, conversations);
 }
 
 // 등록된 모든 계정의 캐시된 대화를 서버로 push.
