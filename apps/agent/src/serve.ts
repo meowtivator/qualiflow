@@ -2,6 +2,7 @@
 // 현재 명령: send_message — 웹에서 답장을 적재하면 여기서 기존 sendMessage로 채널에 보낸다.
 // 보안/전송: authedFetch(Bearer 토큰)로만 서버와 통신. 채널 세션/발송은 전부 이 PC 로컬.
 
+import { removeAccount } from "./accounts";
 import { authedFetch, NotPairedError } from "./api-client";
 import { fetchAllAccounts, sendMessage } from "./fetch";
 import { pushAllAccounts } from "./push";
@@ -48,6 +49,9 @@ async function reportResult(commandId: string, status: "done" | "failed", result
 }
 
 async function executeCommand(command: AgentCommand): Promise<void> {
+  if (command.type === "remove_account") {
+    return executeRemoveAccount(command);
+  }
   if (command.type !== "send_message") {
     await reportResult(command.id, "failed", { error: `알 수 없는 명령 타입: ${command.type}` });
     return;
@@ -65,6 +69,25 @@ async function executeCommand(command: AgentCommand): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     await reportResult(command.id, "failed", { error: message });
     console.log(`  ❌ 발송 실패: ${message}`);
+  }
+}
+
+// remove_account — 웹의 '연결 계정 삭제'가 적재한 명령. 이 PC 로컬의 세션·데이터를 지운다(되돌리기 없음).
+//   removeAccount 가 등록부에서 빼고 .auth/.data 를 rm 한다. 등록되지 않은 계정이면 실패로 보고.
+async function executeRemoveAccount(command: AgentCommand): Promise<void> {
+  const { channel, accountLabel } = command.payload;
+  if (!channel || !accountLabel) {
+    await reportResult(command.id, "failed", { error: "payload가 불완전합니다(channel, accountLabel 필요)." });
+    return;
+  }
+  try {
+    await removeAccount(channel, accountLabel);
+    await reportResult(command.id, "done", { removed: true });
+    console.log(`  ✅ 계정 삭제 완료 (${channel}/${accountLabel}) — 로컬 세션·데이터 제거`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await reportResult(command.id, "failed", { error: message });
+    console.log(`  ❌ 계정 삭제 실패: ${message}`);
   }
 }
 
