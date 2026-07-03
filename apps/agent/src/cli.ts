@@ -8,7 +8,7 @@
 //   pair <코드> | status                (보안 레이어 — 나중)
 
 import { addAccount, listAccounts, removeAccount, resolveLabel, sanitizeLabel, sessionPath } from "./accounts";
-import { fetchAgentIdentity } from "./api-client";
+import { fetchAgentIdentity, hydrateEnvFromCloud } from "./api-client";
 import { loginInstagram } from "./connectors/instagram";
 import { loginTelegram } from "./connectors/telegram";
 import { pairWhatsAppWeb, scrapeWhatsAppWebNames } from "./connectors/whatsapp-web";
@@ -22,7 +22,10 @@ import { loadToken } from "./token-store";
 import { startWizard } from "./web/server";
 
 async function main() {
-  loadLocalEnv(); // apps/web/.env.local 의 TELEGRAM_* 등을 읽어 process.env에 넣는다.
+  loadLocalEnv(); // apps/web/.env.local 의 TELEGRAM_* 등을 읽어 process.env에 넣는다(로컬 우선).
+  // 로컬에 텔레그램 키가 없으면 클라우드(페어링된 우리 서버)에서 받아 process.env 에 주입한다.
+  // ★반드시 loadLocalEnv 뒤 & 모든 명령 실행 전 — 텔레그램 커넥터(getApiCreds)가 읽기 전에 채워지도록.
+  await hydrateEnvFromCloud();
   const args = process.argv.slice(2);
   const command = args[0];
 
