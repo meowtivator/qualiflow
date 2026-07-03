@@ -27,6 +27,8 @@ import { WIZARD_HTML } from "./wizard-html";
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.QUALIFLOW_WIZARD_PORT) || 4317;
 const DEFAULT_LABEL = "기본";
+// 2FA 미지원 안내 문구(센티널). password 콜백이 이걸 throw → onError 가 이 문구면 gramjs 루프를 끊는다.
+const TG_2FA_UNSUPPORTED = "2단계 인증(2FA)이 켜진 계정은 아직 웹 로그인이 안 됩니다 — 터미널 'add telegram'을 쓰세요.";
 
 // 창(Chrome)으로 로그인하는 채널 — 터미널 없이 동작하므로 웹에서 바로 트리거 가능.
 // (whatsapp=QR / telegram=전화코드 는 아래 웹 전용 흐름으로 배선)
@@ -254,17 +256,29 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
     const prompts: TelegramAuthPrompts = {
       phoneNumber: async () => phone,
+      // ★게이트 재무장: gramjs auth.js 의 phoneCode 루프(while(1))는 SignIn 실패 시 onError 후
+      //   phoneCode() 를 다시 부른다. 매번 '다음 제출'을 기다리는 새 deferred 를 만들어 돌려줘야
+      //   틀린 코드 뒤 사용자가 새 코드를 넣을 때까지 대기한다. (안 그러면 이미 resolve된 같은
+      //   promise 를 즉시 돌려줘 같은 틀린 코드로 SignIn 무한반복 → FLOOD_WAIT/차단.)
       phoneCode: async () => {
+        st.codeGate = deferred<string>(); // 재무장 — 항상 '다음 코드 제출'을 기다린다
         st.stage = "code"; // 코드 콜백이 불렸다 = 텔레그램이 코드를 보냈다 → 입력 대기
-        return codeGate.promise;
+        return st.codeGate.promise;
       },
-      // 2FA 계정은 이번 웹 흐름에서 미지원 — 무한대기 대신 명확한 에러로 종료(다음 단계 과제).
+      // 2FA 계정은 이번 웹 흐름에서 미지원. ★단순 throw 하면 gramjs signInWithPassword 의 while(1)
+      //   (auth.js:307)이 onError 후 password() 를 즉시 다시 불러 무한반복한다(phoneCode 와 같은 함정).
+      //   그래서 아래 onError 가 이 문구를 만나면 truthy 를 반환해 루프를 끊는다(loginTelegram reject).
       password: async () => {
-        throw new Error("2단계 인증(2FA)이 켜진 계정은 아직 웹 로그인이 안 됩니다 — 터미널 'add telegram'을 쓰세요.");
+        throw new Error(TG_2FA_UNSUPPORTED);
       },
-      onError: (err) => {
-        st.stage = "error";
-        st.error = err.message;
+      // gramjs onError 반환이 truthy면 while(1) 루프를 끊고 loginTelegram 이 AUTH_USER_CANCEL 로
+      //   reject 된다(auth.js:139-142, 325-328). 코드 오류(만료/오타)는 falsy 를 반환해 루프를 안 끊는다
+      //   — phoneCode 재무장(위)이 '다음 코드'를 기다려 사용자가 새 코드로 재시도할 수 있게. 반면 2FA
+      //   미지원은 회복 불가라 truthy 로 즉시 끊어 무한루프를 막는다.
+      onError: (err): boolean => {
+        st.stage = err.message === TG_2FA_UNSUPPORTED ? "error" : "code";
+        st.error = err.message; // PHONE_CODE_INVALID / PHONE_CODE_EXPIRED / 2FA 안내를 그대로 노출
+        return err.message === TG_2FA_UNSUPPORTED; // 2FA는 즉시 중단, 코드 오류는 계속(재시도 가능)
       }
     };
 
@@ -296,6 +310,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       send(res, 200, { ok: false, message: "받은 코드를 입력하세요." });
       return;
     }
+    st.error = undefined; // 새 코드 제출 = 이전 코드 오류를 지운다(재시도 진입)
     st.codeGate.resolve(code); // phoneCode 콜백이 이 값을 받아 로그인 진행
     send(res, 200, { ok: true });
     return;
