@@ -104,11 +104,18 @@ writeFileSync(
     "  echo [Note] Wizard not ready yet.",
     "  echo   - Open http://127.0.0.1:4317 in your browser, or run:",
     '  echo       "%DEST%\\run.cmd" wizard',
+    "  rem Keep the window open so the user can read the manual-open steps above.",
+    "  pause",
     ") else (",
     '  start "" "http://127.0.0.1:4317"',
     "  echo Opened the setup wizard in your browser.",
-    ")",
-    "pause"
+    "  echo This window closes by itself - background sync/send/wizard keep running.",
+    "  rem Success: install is done and the 3 tasks run independently under Task Scheduler,",
+    "  rem so this window is safe to close. Auto-close after ~5s so no stray cmd lingers all day",
+    "  rem (the reported 'cmd left on all day' was THIS install window sitting on pause).",
+    "  rem Use ping (not timeout) to wait: timeout errors when stdin is redirected; ping never does.",
+    "  ping -n 6 127.0.0.1 >nul",
+    ")"
   ].join(CRLF) + CRLF
 );
 
