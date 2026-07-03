@@ -84,7 +84,7 @@ var CH={
   instagram:{nm:"Instagram",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#c13584'><path d='M7.5 2h9A5.5 5.5 0 0 1 22 7.5v9a5.5 5.5 0 0 1-5.5 5.5h-9A5.5 5.5 0 0 1 2 16.5v-9A5.5 5.5 0 0 1 7.5 2Zm0 2A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20h9a3.5 3.5 0 0 0 3.5-3.5v-9A3.5 3.5 0 0 0 16.5 4h-9ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm5.3-2.8a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z'/></svg>",hw:"로그인 창",note:"열린 창에서 로그인하세요"},
   telegram:{nm:"Telegram",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#2aabee'><path d='M21.9 4.3 2.8 11.7c-1 .4-1 1 0 1.3l4.8 1.5L19 7.1c.5-.3 1-.2.6.2l-9.2 8.3-.3 4.4c.4 0 .6-.2.8-.4l2-1.9 4.1 3c.8.4 1.3.2 1.5-.7l2.7-12.7c.3-1.1-.4-1.6-1.3-1Z'/></svg>",hw:"전화 코드",note:"전화번호 입력 → 받은 코드 입력"}
 };
-var st={step:0,paired:false,accounts:[],connecting:{},adding:{}};
+var st={step:0,paired:false,accounts:[],connecting:{},adding:{},serverConnect:{}};
 
 function api(path,body){ return fetch(path,{method:body?"POST":"GET",headers:{"content-type":"application/json"},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json()}); }
 function $(id){return document.getElementById(id);}
@@ -93,7 +93,9 @@ function acctsOf(ch){ return st.accounts.filter(function(a){return a.channel===c
 function ckey(ch,label){ return ch+"\\u0000"+label; }
 function totalAccounts(){ return st.accounts.length; }
 
-function loadStatus(){ return api("/api/status").then(function(s){ st.paired=!!s.paired; st.accounts=s.accounts||[]; }); }
+function loadStatus(){ return api("/api/status").then(function(s){ st.paired=!!s.paired; st.accounts=s.accounts||[]; st.serverConnect=s.connecting||{}; }); }
+// 서버가 준 계정별 로그인 상태 키(server.ts connectKey 와 동일: "채널 라벨").
+function sckey(ch,label){ return ch+" "+label; }
 
 function stepper(){
   $("stepper").innerHTML=STEPS.map(function(t,i){
@@ -140,7 +142,12 @@ function grid(){
   $("grid").innerHTML=Object.keys(CH).map(function(ch){
     var c=CH[ch], accts=acctsOf(ch);
     var rows=accts.map(function(a){
-      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span><span class="badge ok">\\u2713 연결됨</span></div>';
+      // 서버 로그인 상태가 있으면 그걸 우선 표시(로그인 중/실패). 없으면 등록됨=연결됨.
+      var cs=st.serverConnect[sckey(ch,a.label)];
+      var badge='<span class="badge ok">\\u2713 연결됨</span>';
+      if(cs&&cs.status==="connecting"){ badge='<span class="badge warn">로그인 창 여는 중\\u2026</span>'; }
+      else if(cs&&cs.status==="error"){ badge='<span class="badge warn" title="'+esc(cs.message||"")+'">로그인 실패 — 다시 시도</span>'; }
+      return '<div class="acct"><span class="ann">'+esc(a.label)+'</span>'+badge+'</div>';
     });
     var busyNote=false;
     Object.keys(st.connecting).forEach(function(k){

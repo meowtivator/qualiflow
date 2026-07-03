@@ -19,4 +19,4 @@ export { discoverBuyerSns, type DiscoverBuyerSnsInput, type AlibabaHeadlessDisco
 // executablePath 로 넘길 때 쓴다(별도 Playwright 브라우저 다운로드 없이 동작).
 // 공통 Chrome 스캐폴딩(자동화 플래그 없는 순수 크롬 + CDP) — 새 브라우저 리더가 4번째 복사 없이
 // 재사용한다(예: WhatsApp Web 이름 리더). spawnChrome/waitForCdp/delay 까지 함께 노출.
-export { findChrome, spawnChrome, waitForCdp, delay } from "./cli/chrome-cdp";
+export { findChrome, spawnChrome, waitForCdp, delay, findFreePort } from "./cli/chrome-cdp";

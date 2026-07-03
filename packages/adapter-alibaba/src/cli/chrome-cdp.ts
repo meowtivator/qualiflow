@@ -6,6 +6,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { access } from "node:fs/promises";
+import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -30,6 +31,21 @@ export async function findChrome(): Promise<string | null> {
 
 // Node 내장 프라미스 타이머를 그대로 재export(기존 delay(ms) 호출부 호환).
 export { delay };
+
+// OS가 배정하는 빈 TCP 포트를 하나 얻는다(127.0.0.1). 고정 포트(9222 등)를 쓰면 백그라운드
+// 동기화(watch)가 이미 그 포트로 크롬을 띄워 둔 순간 로그인 창이 포트를 못 잡아 조용히 실패한다.
+// 그래서 로그인/추출을 띄울 때마다 빈 포트를 새로 받아 겹치지 않게 한다.
+export function findFreePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(() => (port ? resolvePort(port) : reject(new Error("빈 포트를 찾지 못했습니다."))));
+    });
+  });
+}
 
 // 에이전트 데이터 폴더(.data) 안의 파일 경로를 만든다.
 //   - 설치본: QUALIFLOW_HOME/.data  (런처 run.sh/run.cmd가 QUALIFLOW_HOME을 세팅함)
