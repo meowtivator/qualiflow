@@ -8,12 +8,14 @@
 //   - 채널 세션은 .auth 에 로컬 저장(원래대로). 서버로 안 감.
 
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import qrcode from "qrcode-terminal";
 
 import { addAccount, listAccounts, sanitizeLabel, sessionPath } from "../accounts";
 import { CLOUD_BASE_URL } from "../config";
+import { buildAuthUrl, exchangeCode } from "../connectors/email";
 import { loginInstagram } from "../connectors/instagram";
 import { loginTelegram, type TelegramAuthPrompts } from "../connectors/telegram";
 import { loginWhatsApp } from "../connectors/whatsapp";
@@ -88,6 +90,10 @@ const connectState = new Map<string, WaState | TgState | WinState>();
 function ckey(channel: string, label: string): string {
   return channel + ":" + label;
 }
+
+// 이메일 OAuth 진행 중인 state → 어떤 라벨/redirect 로 교환할지(콜백이 code와 함께 이걸로 찾는다).
+// 메모리에만 둔다(서버로 안 감). state 는 추측 불가한 랜덤 → CSRF/혼선 방지.
+const emailOAuth = new Map<string, { label: string; redirectUri: string }>();
 
 // 라벨 등록(이미 있으면 무시) — 세션 저장 전에 등록부에 넣어 마법사가 진행 상태를 라벨로 매칭한다.
 async function ensureRegistered(channel: string, label: string): Promise<void> {
@@ -307,8 +313,75 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return;
   }
 
+  // 이메일 OAuth 시작 — 구글 동의 URL을 만들어 돌려준다(브라우저는 클라이언트가 연다). redirect 는
+  // 이 마법사 서버 자신(127.0.0.1:PORT/oauth/callback) — loopback 이라 토큰이 이 컴퓨터를 안 떠난다.
+  if (req.method === "POST" && url === "/api/connect-email") {
+    const body = await readJson(req);
+    const label = sanitizeLabel(typeof body.label === "string" && body.label ? body.label : DEFAULT_LABEL);
+    const redirectUri = `http://${HOST}:${PORT}/oauth/callback`;
+    // 추측 불가한 state(랜덤 16바이트) — 콜백에서 이 값으로 라벨/redirect 를 되찾고, CSRF 를 막는다.
+    const state = randomBytes(16).toString("hex");
+    emailOAuth.set(state, { label, redirectUri });
+    const key = ckey("email", label);
+    connectState.set(key, { kind: "window", status: "connecting" });
+    try {
+      const authUrl = buildAuthUrl(redirectUri, state); // GMAIL_CLIENT_ID 없으면 여기서 throw
+      send(res, 200, { ok: true, authUrl });
+    } catch (error) {
+      emailOAuth.delete(state);
+      connectState.set(key, { kind: "window", status: "error", message: error instanceof Error ? error.message : "설정 필요" });
+      send(res, 200, { ok: false, message: error instanceof Error ? error.message : "이메일 연결 시작 실패" });
+    }
+    return;
+  }
+
+  // 구글 OAuth 콜백 — 사용자가 승인하면 구글이 이 loopback URL로 code를 돌려준다. code→refresh_token 교환
+  // 후 로컬 저장(★서버로 안 감) + 계정 등록. 브라우저 탭에는 결과 안내 HTML을 그린다(탭 닫고 마법사로).
+  if (req.method === "GET" && url === "/oauth/callback") {
+    const params = new URL(req.url || "/", `http://${HOST}:${PORT}`).searchParams;
+    const state = params.get("state") ?? "";
+    const code = params.get("code") ?? "";
+    const oauthError = params.get("error");
+    const pending = emailOAuth.get(state);
+    if (!pending) {
+      res.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+      res.end(oauthResultHtml("연결 실패", "세션을 찾을 수 없습니다. 마법사에서 다시 시도하세요."));
+      return;
+    }
+    emailOAuth.delete(state);
+    const key = ckey("email", pending.label);
+    if (oauthError || !code) {
+      connectState.set(key, { kind: "window", status: "error", message: oauthError ?? "승인 코드가 없습니다." });
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(oauthResultHtml("연결 취소됨", "승인이 완료되지 않았습니다. 마법사로 돌아가 다시 시도하세요."));
+      return;
+    }
+    try {
+      await addAccount("email", pending.label).catch(() => undefined); // 이미 등록돼 있으면 무시
+      await exchangeCode(sessionPath("email", pending.label), code, pending.redirectUri);
+      connectState.set(key, { kind: "window", status: "done" });
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(oauthResultHtml("이메일 연결 완료", "이 탭을 닫고 마법사로 돌아가세요."));
+    } catch (error) {
+      connectState.set(key, { kind: "window", status: "error", message: error instanceof Error ? error.message : "토큰 교환 실패" });
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(oauthResultHtml("연결 실패", error instanceof Error ? error.message : "토큰 교환에 실패했습니다."));
+    }
+    return;
+  }
+
   res.writeHead(404, { "content-type": "text/plain" });
   res.end("not found");
+}
+
+// OAuth 콜백 탭에 그리는 최소 안내 HTML(마법사 본체와 별개 — 그냥 결과만).
+function oauthResultHtml(title: string, message: string): string {
+  const safe = (s: string): string => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c);
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"/><title>${safe(title)}</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f5fb;color:#1c1b22;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{background:#fff;border:1px solid #e7e5ee;border-radius:14px;padding:32px 28px;max-width:380px;text-align:center}
+h1{font-size:18px;margin:0 0 8px}p{font-size:14px;color:#5b5966;line-height:1.6;margin:0}</style></head>
+<body><div class="card"><h1>${safe(title)}</h1><p>${safe(message)}</p></div></body></html>`;
 }
 
 function openBrowser(target: string): void {
