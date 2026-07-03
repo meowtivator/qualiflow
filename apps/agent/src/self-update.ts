@@ -65,7 +65,9 @@ export async function latestRelease(): Promise<{ version: string; url: string } 
 function openFolder(path: string): void {
   const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open";
   try {
-    spawn(cmd, [path], { stdio: "ignore", detached: true, shell: process.platform === "win32" }).unref();
+    // explorer/open/xdg-open 은 모두 PATH 로 해석 가능한 실행파일이라 shell 이 불필요하다.
+    // (win32 에서 shell:true 로 explorer 를 돌리면 정상인데도 exit code 1 을 실패로 오인할 여지가 있어 뺀다.)
+    spawn(cmd, [path], { stdio: "ignore", detached: true }).unref();
   } catch {
     // 폴더 열기 실패는 치명적 아님 — 경로는 응답으로 사용자에게 준다.
   }

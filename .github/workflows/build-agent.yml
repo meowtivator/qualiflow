@@ -60,6 +60,31 @@ jobs:
             ./node agent.mjs accounts
           fi
 
+      # 상주 마법사(wizard)가 실제로 뜨는지 회귀검증. install.bat/install.command 과 동일하게
+      # 백그라운드로 wizard 를 띄우고 4317 응답을 폴링 → /api/version 이 200 이면 통과 → 프로세스 종료.
+      # (CI 러너는 4317 이 비어 있으므로 기본 포트 사용. Windows/mac 러너 모두 bash + 동봉 curl.)
+      - name: Smoke test (wizard daemon starts and answers)
+        shell: bash
+        run: |
+          export QUALIFLOW_HOME="${RUNNER_TEMP}/qf-wiz"
+          cd apps/agent/dist/package
+          if [ "${{ runner.os }}" = "Windows" ]; then NODE=./node.exe; else NODE=./node; fi
+          "$NODE" agent.mjs wizard &
+          WIZ_PID=$!
+          # 종료 보장: 성공/실패 어느 경로로 빠지든 백그라운드 wizard 프로세스를 정리한다.
+          trap 'kill "$WIZ_PID" 2>/dev/null || true' EXIT
+          # 최대 ~20초(40 x 0.5s) 동안 /api/version 이 200 을 줄 때까지 폴링.
+          for i in $(seq 1 40); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 http://127.0.0.1:4317/api/version)" = "200" ]; then
+              echo "wizard OK (/api/version 200)"
+              curl -s http://127.0.0.1:4317/api/version
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "wizard did not answer on 4317 within timeout" >&2
+          exit 1
+
       - uses: actions/upload-artifact@v4
         with:
           name: qualiflow-agent-${{ runner.os }}
