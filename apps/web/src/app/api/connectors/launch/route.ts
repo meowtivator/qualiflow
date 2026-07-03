@@ -22,7 +22,14 @@ const NODE_BIN_DIR = path.dirname(process.execPath);
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "/Applications/Chromium.app/Contents/MacOS/Chromium"
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  // Windows: Chrome, fall back to Edge (Chromium-based → same CDP behavior). Built from
+  // env vars so no hardcoded C:; undefined entries are dropped by filter(Boolean) below.
+  process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}\\Google\\Chrome\\Application\\chrome.exe`,
+  process.env["PROGRAMFILES(X86)"] && `${process.env["PROGRAMFILES(X86)"]}\\Google\\Chrome\\Application\\chrome.exe`,
+  process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
+  process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}\\Microsoft\\Edge\\Application\\msedge.exe`,
+  process.env["PROGRAMFILES(X86)"] && `${process.env["PROGRAMFILES(X86)"]}\\Microsoft\\Edge\\Application\\msedge.exe`
 ].filter((value): value is string => Boolean(value));
 
 async function findChrome() {
