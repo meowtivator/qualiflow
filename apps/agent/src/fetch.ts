@@ -16,6 +16,7 @@ import { createChatAdapter, type ChatRawConversation } from "@qualiflow/adapter-
 import type { ConversationAdapter } from "@qualiflow/core";
 
 import { dataFile, listAccounts, sessionPath } from "./accounts";
+import { fetchEmail, sendEmail } from "./connectors/email";
 import { fetchInstagram, sendInstagram } from "./connectors/instagram";
 import { fetchTelegram, sendTelegram } from "./connectors/telegram";
 import { fetchWhatsApp, sendWhatsApp } from "./connectors/whatsapp";
@@ -191,6 +192,20 @@ export async function fetchTelegramInbox(label: string, options: { cached: boole
   return summarize("telegram", label, conversations.length, createChatAdapter("telegram", conversations));
 }
 
+export async function fetchEmailInbox(label: string, options: { cached: boolean } = { cached: false }): Promise<FetchSummary> {
+  const file = dataFile("email", label);
+  let conversations: ChatRawConversation[];
+  if (options.cached) {
+    console.log(`🗂  Email(${label}) --cached: 저장된 데이터를 읽습니다(연결 안 함).`);
+    conversations = await readChatData(file);
+  } else {
+    console.log(`🔌 Email(${label}) 커넥터 실행 — Gmail API로 인박스를 읽습니다...`);
+    conversations = await fetchEmail(sessionPath("email", label));
+    await writeChatData(file, conversations);
+  }
+  return summarize("email", label, conversations.length, createChatAdapter("email", conversations));
+}
+
 export async function fetchInstagramInbox(label: string, options: { cached: boolean } = { cached: false }): Promise<FetchSummary> {
   const file = dataFile("instagram", label);
   let conversations: ChatRawConversation[];
@@ -234,8 +249,10 @@ export async function fetchChannel(channel: string, label: string, options: { ca
       return fetchTelegramInbox(label, options);
     case "instagram":
       return fetchInstagramInbox(label, options);
+    case "email":
+      return fetchEmailInbox(label, options);
     default:
-      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram.`);
+      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram, email.`);
   }
 }
 
@@ -275,7 +292,12 @@ export async function sendMessage(channel: string, label: string, recipient: str
         throw new Error("알리바바는 'me' 발송이 없습니다. 불러온 대화의 threadId(대화코드)를 쓰세요.");
       }
       return runSendAlibaba(sessionPath("alibaba", label), recipient, text);
+    case "email":
+      if (recipient === "me") {
+        throw new Error("이메일은 'me' 발송이 없습니다. 불러온 대화의 threadId(상대 이메일 주소)를 쓰세요.");
+      }
+      return sendEmail(sessionPath("email", label), recipient, text);
     default:
-      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram.`);
+      throw new Error(`알 수 없는 채널 '${channel}'. 가능: alibaba, whatsapp, telegram, instagram, email.`);
   }
 }

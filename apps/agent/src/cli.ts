@@ -62,6 +62,9 @@ async function main() {
       } else if (channel === "instagram") {
         console.log("Instagram 로그인 창을 엽니다(브라우저에서 직접 로그인)...");
         await loginInstagram(sessionPath("instagram", account.label));
+      } else if (channel === "email") {
+        // 이메일 OAuth 는 loopback 콜백이 필요해 마법사(로컬 웹)에서 로그인한다. CLI 는 등록만.
+        console.log("이메일(Gmail)은 마법사에서 로그인합니다 — 'setup' 실행 후 Email 채널을 연결하세요.");
       } else {
         console.log(`'${channel}' 커넥터는 다음 단계입니다 — 등록만 완료(로그인은 추후).`);
       }

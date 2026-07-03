@@ -87,10 +87,11 @@ var CH={
   whatsapp:{nm:"WhatsApp",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#25a766'><path d='M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm5.4 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.5-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.7 1.8c.1.1.1.3 0 .5l-.3.4-.3.3c-.1.1-.3.3-.1.5.1.3.6 1 1.3 1.6.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.8c.2-.2.3-.2.6-.1l1.7.8c.2.1.4.2.5.3.1.2.1.7-.2 1.4Z'/></svg>",hw:"QR 스캔",note:"폰 → 설정 → 연결된 기기 → 화면의 QR 스캔"},
   alibaba:{nm:"Alibaba",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#ff6a00'><path d='M14.391 16.22c-.963.044-.865-.459-.302-1.234 1.32-1.768 3.82-4.236 3.906-5.982.151-2.283-2.143-3.026-4.501-3.004-1.645.022-3.344.492-4.501.906C5 8.315 2.489 10.576.909 13.076-.768 15.554-.216 17.923 3.322 18c2.716-.109 4.48-.862 6.32-1.802.01 0-5.086 1.453-6.958.383l-.008-.002c-.193-.11-.404-.264-.457-.683-.012-.885 1.46-1.802 2.283-2.097v-1.533a5.374 5.374 0 0 0 1.955.366 5.378 5.378 0 0 0 3.472-1.265c.037.13.056.278.044.447h.371c.048-.394-.172-.706-.172-.706-.333-.529-.915-.52-.915-.52s.315.137.529.466a4.953 4.953 0 0 1-4.665.932l1.21-1.2-.336-.874c2.435-.852 4.48-1.507 7.812-2.085l-.746-.624.389-.24c2.01.568 3.325.985 3.253 2.051a2.672 2.672 0 0 1-.202.611c-.584 1.158-2.326 3.09-3.029 3.898-.465.535-.92 1.06-1.245 1.562-.335.503-.54.971-.551 1.42.043 3.504 10.334-1.64 12.324-3.003-2.943 1.266-6.113 2.489-9.609 2.718Z'/></svg>",hw:"로그인 창",note:"열린 창에서 평소처럼 로그인하세요"},
   instagram:{nm:"Instagram",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#c13584'><path d='M7.5 2h9A5.5 5.5 0 0 1 22 7.5v9a5.5 5.5 0 0 1-5.5 5.5h-9A5.5 5.5 0 0 1 2 16.5v-9A5.5 5.5 0 0 1 7.5 2Zm0 2A3.5 3.5 0 0 0 4 7.5v9A3.5 3.5 0 0 0 7.5 20h9a3.5 3.5 0 0 0 3.5-3.5v-9A3.5 3.5 0 0 0 16.5 4h-9ZM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10Zm0 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm5.3-2.8a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z'/></svg>",hw:"로그인 창",note:"열린 창에서 로그인하세요"},
-  telegram:{nm:"Telegram",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#2aabee'><path d='M21.9 4.3 2.8 11.7c-1 .4-1 1 0 1.3l4.8 1.5L19 7.1c.5-.3 1-.2.6.2l-9.2 8.3-.3 4.4c.4 0 .6-.2.8-.4l2-1.9 4.1 3c.8.4 1.3.2 1.5-.7l2.7-12.7c.3-1.1-.4-1.6-1.3-1Z'/></svg>",hw:"전화 코드",note:"전화번호 입력 → 받은 코드 입력"}
+  telegram:{nm:"Telegram",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#2aabee'><path d='M21.9 4.3 2.8 11.7c-1 .4-1 1 0 1.3l4.8 1.5L19 7.1c.5-.3 1-.2.6.2l-9.2 8.3-.3 4.4c.4 0 .6-.2.8-.4l2-1.9 4.1 3c.8.4 1.3.2 1.5-.7l2.7-12.7c.3-1.1-.4-1.6-1.3-1Z'/></svg>",hw:"전화 코드",note:"전화번호 입력 → 받은 코드 입력"},
+  email:{nm:"Email",ic:"<svg viewBox='0 0 24 24' width='20' height='20' fill='#6b7280'><path d='M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1.4 2L12 12l7.6-5H4.4ZM20 8.3l-8 5.3-8-5.3V17h16V8.3Z'/></svg>",hw:"Gmail 로그인",note:"열린 구글 탭에서 승인하세요"}
 };
-// 채널별 웹 로그인 방식: window=창(alibaba/instagram) / qr=WhatsApp QR / phone=Telegram 전화+코드.
-var FLOW={alibaba:"window",instagram:"window",whatsapp:"qr",telegram:"phone"};
+// 채널별 웹 로그인 방식: window=창(alibaba/instagram) / qr=WhatsApp QR / phone=Telegram 전화+코드 / oauth=구글 승인(email).
+var FLOW={alibaba:"window",instagram:"window",whatsapp:"qr",telegram:"phone",email:"oauth"};
 // serverConnect = 서버가 준 창-로그인(alibaba/instagram) 진행 상태(connecting/done/error). grid()가 배지로 표시.
 var st={step:0,paired:false,accounts:[],connecting:{},adding:{},panel:null,serverConnect:{}};
 // panel = {ch, label, mode} — 현재 열려있는 로그인 패널(qr 또는 phone/code). 폴링 타이머는 panelTimer.
@@ -192,6 +193,7 @@ function startConnect(ch,rawLabel){
   var flow=FLOW[ch]||"window";
   if(flow==="qr"){ startWhatsApp(ch,label); return; }
   if(flow==="phone"){ openPanel(ch,label,"phone"); return; }
+  if(flow==="oauth"){ startEmail(ch,label); return; }
   // window 흐름(alibaba/instagram): 창을 열고 폴링으로 연결 확인.
   var k=ckey(ch,label);
   st.connecting[k]="busy"; grid();
@@ -200,6 +202,21 @@ function startConnect(ch,rawLabel){
     if(r&&!r.ok&&r.message){ alert(r.message); }
     return loadStatus();
   }).then(grid).catch(function(){ st.connecting[k]=null; grid(); });
+}
+
+// ── Email: 구글 OAuth 승인(loopback) ──
+// 서버에서 동의 URL을 받아 새 탭으로 연다. 승인이 끝나면 서버가 /oauth/callback 으로 code를 받아
+// 토큰 교환·저장·등록을 하고, connectState 로 done/error 를 표면화 → 4초 상태 폴링이 배지를 갱신한다.
+function startEmail(ch,label){
+  var k=ckey(ch,label);
+  st.connecting[k]="busy"; grid();
+  // 팝업 차단 회피: 클릭 흐름 안에서 빈 탭을 먼저 연 뒤, authUrl 이 오면 그 탭을 그 주소로 보낸다.
+  var tab=window.open("about:blank","_blank");
+  api("/api/connect-email",{channel:ch,label:label}).then(function(r){
+    if(r&&r.ok&&r.authUrl){ if(tab){ tab.location.href=r.authUrl; } else { window.open(r.authUrl,"_blank"); } }
+    else { st.connecting[k]=null; if(tab){tab.close();} if(r&&r.message){alert(r.message);} grid(); return; }
+    return loadStatus();
+  }).then(grid).catch(function(){ st.connecting[k]=null; if(tab){tab.close();} grid(); });
 }
 
 function stopPanel(){ if(panelTimer){clearInterval(panelTimer);panelTimer=null;} st.panel=null; }
