@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 
-import { isUpdateAvailable, latestRelease } from "./self-update";
+import { buildApplyBat, isUpdateAvailable, latestRelease } from "./self-update";
 
 // 버전 비교 — 미배포(dev)는 항상 false, 낮은→높은만 true.
 assert.equal(isUpdateAvailable("0.3.0", "0.3.1"), true, "패치 올라가면 업데이트 있음");
@@ -36,4 +36,13 @@ assert.ok(latest, "정식 릴리스가 있어야 한다");
 assert.equal(latest.version, "0.4.0", "draft/prerelease/자산없음 제외 후 가장 높은 정식 = 0.4.0");
 assert.ok(latest.url.startsWith("https://github.com/meowtivator/qualiflow/releases/download/"), "다운로드 URL 은 우리 릴리스 화이트리스트 접두사");
 
-console.log("✅ self-update.selfcheck 통과 — 최신:", latest.version);
+// Windows 무음 업데이터 배치 생성 — 경로 보간 + 필수 3동작(상주정지/xcopy/재시작)이 다 들어있는지.
+//   실제 실행은 실제 Windows 에서만 검증되지만, 문자열이 조용히 깨지면(경로 누락·라인 삭제) 여기서 잡는다.
+const bat = buildApplyBat("C:\\Temp\\qf update\\package"); // 공백 든 경로로 따옴표 처리도 함께 검증
+assert.ok(bat.includes('xcopy "C:\\Temp\\qf update\\package\\*" "%LOCALAPPDATA%\\QualiFlow\\"'), "xcopy 가 보간된 packageDir→설치폴더로 복사해야 한다");
+assert.equal((bat.match(/schtasks \/End/g) ?? []).length, 3, "상주 3개를 모두 정지해야 한다(파일락 해제)");
+assert.equal((bat.match(/schtasks \/Run/g) ?? []).length, 3, "상주 3개를 모두 재시작해야 한다");
+assert.ok(/ping 127\.0\.0\.1 -n \d+/.test(bat), "정지 후 핸들 해제 대기(ping)가 있어야 한다");
+assert.ok(bat.includes("\r\n") && bat.endsWith("\r\n"), "배치는 CRLF 줄바꿈이어야 한다(cmd.exe)");
+
+console.log("✅ self-update.selfcheck 통과 — 최신:", latest.version, "· apply-update.bat 생성 OK");

@@ -1,18 +1,22 @@
-// 자가 업데이트 — 최신 릴리스를 받아 이 OS용 설치본 zip 을 임시폴더에 풀고, 설치 폴더를 연다.
-// 사용자가 그 폴더의 설치 파일(install.command/​install.bat)을 실행하면 상주 서비스가 새 버전으로
-// 재등록·재시작된다. ★자동 실행이 아니라 "받아서 열어두기"까지(반자동) — 아래 보안 경계 참조.
+// 자가 업데이트 — 최신 릴리스를 받아 이 OS용 설치본 zip 을 임시폴더에 풀고 검증한다.
+//   - Windows: 검증된 새 package 로 상주를 무음 교체·재시작하는 업데이터를 띄운다(완전 자동).
+//   - mac/linux: 설치 폴더를 열어 사용자가 install 파일을 직접 실행하게 한다(반자동, 기존 그대로).
+// 재등록·재시작이 끝나면 상주 서비스가 새 버전으로 돈다.
 //
 // ★보안 경계(AGENTS.md 3항 · 이 파일이 다운로드+실행에 닿으므로 줄단위로):
 //   - 대상 레포 고정: meowtivator/qualiflow 만. 릴리스 조회도 이 레포 API 만.
 //   - 다운로드 URL 화이트리스트: https://github.com/meowtivator/qualiflow/releases/download/ 로 시작하는
 //     https URL 만 받는다. 그 외(다른 호스트/http/리다이렉트 목적지)는 거부 → 임의 코드 다운로드 차단.
-//   - 원자성: 임시폴더에 받아 풀고 '설치 파일이 실제로 있는지' 검증한 뒤에야 사용자에게 연다.
-//     기존 설치본은 이 과정에서 건드리지 않는다(설치 파일을 사용자가 실행해야 교체됨) → 실패해도 롤백 불필요.
+//   - 원자성: 임시폴더에 받아 풀고 '설치 파일이 실제로 있는지' 검증한 뒤에야 적용/오픈한다.
+//     기존 설치본은 검증 전엔 건드리지 않는다 → 검증 실패면 아무것도 바꾸지 않고 중단.
+//   - ★신뢰 앵커 불변: Windows 자동 적용도 다운로드된 install.bat 을 실행하지 않는다. 우리가 코드로
+//     생성한 apply-update.bat 만 실행하고, 그 내용은 이 파일에 고정(검증된 package 를 복사·재시작만).
+//     신뢰의 근거는 여전히 'HTTPS + 릴리스 URL 화이트리스트'뿐 — 받은 배치 파일을 신뢰하지 않는다.
 //   - 명시 트리거로만: /api/self-update(버튼) 이 호출할 때만 동작. 자동/주기 실행 없음.
 
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -73,9 +77,11 @@ function openFolder(path: string): void {
   }
 }
 
-// 임시폴더에 zip 을 받아 풀고, 설치 파일이 있는지 검증한 뒤 그 폴더를 연다.
-//   반환: 사용자가 실행할 설치 파일이 든 폴더 경로 + 버전. (자동 실행하지 않는다.)
-export async function performSelfUpdate(): Promise<{ version: string; folder: string }> {
+// 임시폴더에 zip 을 받아 풀고, 설치 파일이 있는지 검증한 뒤:
+//   - Windows: 검증된 package 로 상주를 무음 교체·재시작(완전 자동, applying:true).
+//   - mac/linux: 설치 폴더를 연다(반자동, 기존 그대로, applying:false).
+//   반환: 버전 + folder(항상 포함 — 자동 실패 시 웹이 수동 안내에 씀) + applying(자동 적용 시작 여부).
+export async function performSelfUpdate(): Promise<{ version: string; folder: string; applying: boolean }> {
   const latest = await latestRelease();
   if (!latest) throw new Error("설치 가능한 최신 릴리스를 찾지 못했습니다.");
   // 화이트리스트: 우리 릴리스 자산 URL 만. (다른 호스트/http/오타 URL 차단)
@@ -102,13 +108,61 @@ export async function performSelfUpdate(): Promise<{ version: string; folder: st
     const installerDir = await findInstaller(work, ASSET.installer);
     if (!installerDir) throw new Error("설치 파일을 찾지 못했습니다 — 업데이트를 중단합니다(손상된 다운로드).");
 
+    // Windows 는 무음 업데이터로 완전 자동 적용을 시도한다. 성공하면 applying:true.
+    //   실패해도 폴더는 열어(폴백) 웹이 수동 안내할 수 있게 folder 를 항상 채운다.
+    if (process.platform === "win32") {
+      const started = await startWindowsApply(installerDir, work).catch(() => false);
+      if (started) return { version: latest.version, folder: installerDir, applying: true };
+    }
+
     openFolder(installerDir);
-    return { version: latest.version, folder: installerDir };
+    return { version: latest.version, folder: installerDir, applying: false };
   } catch (error) {
     await rm(work, { recursive: true, force: true }).catch(() => undefined);
     throw error;
   }
-  // 성공 시 work 는 남긴다 — 사용자가 그 폴더의 설치 파일을 실행해야 하므로.
+  // 성공 시 work 는 남긴다 — 업데이터/사용자가 그 폴더의 package·설치 파일을 써야 하므로.
+}
+
+// Windows 무음 자동 적용 — install.bat 을 실행하지 않는다(그 안엔 pause·브라우저열기 같은 대화형 꼬리가
+//   있어 무인 실행에 안 맞음). 대신 그 핵심(상주 정지 → 핸들 해제 대기 → 새 package 덮어쓰기 → 재시작)만
+//   재현하는 최소 비대화형 apply-update.bat 를 임시폴더에 생성해 detached 로 띄운다.
+//   이 배치는 자신을 띄운 wizard 가 schtasks /End 로 꺼져도 독립 생존해 교체를 끝내고 마법사를 되살린다.
+//   ★신뢰 앵커: 실행하는 배치는 '우리가 만든 이 문자열'뿐. 다운로드된 install.bat 은 안 건드린다.
+//   packageDir = 압축해제 결과에서 install.bat 이 있는 폴더의 하위 package(런타임 본체).
+//   반환: 업데이터를 spawn 하는 데 성공했으면 true, 아니면 false(호출부가 openFolder 폴백).
+async function startWindowsApply(installerDir: string, work: string): Promise<boolean> {
+  const packageDir = join(installerDir, "package");
+  // package 폴더가 없으면(예상 밖 zip 구조) 자동 적용을 포기하고 폴백.
+  const entries = await readdir(packageDir).catch(() => null);
+  if (!entries || entries.length === 0) return false;
+
+  const bat = buildApplyBat(packageDir);
+  const batPath = join(work, "apply-update.bat");
+  await writeFile(batPath, bat, "utf8");
+
+  // detached + stdio ignore + windowsHide + unref → 부모(wizard)가 죽어도 살아남아 교체를 완료한다.
+  spawn("cmd", ["/c", batPath], { detached: true, windowsHide: true, stdio: "ignore" }).unref();
+  return true;
+}
+
+// apply-update.bat 문자열 생성(순수 함수 — 셀프체크가 경로 보간·schtasks 3개·xcopy 라인을 검증).
+//   packageDir 를 따옴표로 감싸 공백 경로도 안전하게. 대상은 %LOCALAPPDATA%\QualiFlow(install.bat 과 동일).
+export function buildApplyBat(packageDir: string): string {
+  const CRLF = "\r\n";
+  return [
+    "@echo off",
+    "rem QualiFlow 무음 업데이터 — 상주 3개 정지 → 핸들 해제 대기 → 새 package 덮어쓰기 → 재시작.",
+    "rem (self-update.ts 가 검증된 다운로드에서만 생성한다. 대화형 install.bat 을 대체하지 않고 핵심만 재현.)",
+    'schtasks /End /TN "QualiFlow Agent"  >nul 2>&1',
+    'schtasks /End /TN "QualiFlow Serve"  >nul 2>&1',
+    'schtasks /End /TN "QualiFlow Wizard" >nul 2>&1',
+    "ping 127.0.0.1 -n 4 >nul",
+    `xcopy "${packageDir}\\*" "%LOCALAPPDATA%\\QualiFlow\\" /E /I /Y >nul`,
+    'schtasks /Run /TN "QualiFlow Agent"  >nul 2>&1',
+    'schtasks /Run /TN "QualiFlow Serve"  >nul 2>&1',
+    'schtasks /Run /TN "QualiFlow Wizard" >nul 2>&1'
+  ].join(CRLF) + CRLF;
 }
 
 function unzip(zip: string, dest: string): Promise<void> {

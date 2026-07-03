@@ -473,11 +473,17 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
     try {
       const result = await performSelfUpdate();
+      // applying=true(Windows 자동 적용 시작): 무음 업데이터가 상주를 교체·재시작 중 → 웹이 버전 폴링으로
+      //   완료를 확인한다. applying=false(mac/linux, 또는 자동 실패 폴백): 폴더를 열었으니 수동 실행 안내.
+      const message = result.applying
+        ? `새 버전 ${result.version} 을(를) 적용 중입니다. 자동 재시작이 끝나면 최신 버전으로 바뀝니다.`
+        : `새 버전 ${result.version} 설치본을 열었습니다. 폴더의 설치 파일을 실행하면 업데이트됩니다.`;
       sendCors(res, 200, {
         ok: true,
         version: result.version,
         folder: result.folder,
-        message: `새 버전 ${result.version} 설치본을 열었습니다. 폴더의 설치 파일을 실행하면 업데이트됩니다.`
+        applying: result.applying,
+        message
       }, req);
     } catch (error) {
       sendCors(res, 200, { ok: false, message: error instanceof Error ? error.message : "업데이트 실패" }, req);
