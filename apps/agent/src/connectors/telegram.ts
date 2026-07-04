@@ -73,6 +73,7 @@ export async function loginTelegram(sessionDir: string, prompts?: TelegramAuthPr
 
   if (prompts) {
     // 웹 흐름: 주입된 콜백으로 로그인(전화/코드/2FA는 마법사가 HTTP로 공급).
+    console.log("[tg] client.start 진입 (웹 흐름)"); // 이후 phoneNumber→phoneCode 콜백이 순서대로 불려야 정상
     await client.start({
       phoneNumber: prompts.phoneNumber,
       phoneCode: prompts.phoneCode,
@@ -81,6 +82,7 @@ export async function loginTelegram(sessionDir: string, prompts?: TelegramAuthPr
       //   Boolean(...) 로 void/undefined 를 false 로 좁힌다(콜백이 값을 안 주면 = 루프 계속).
       onError: async (err) => Boolean(prompts.onError?.(err instanceof Error ? err : new Error(String(err))))
     });
+    console.log("[tg] client.start 이탈 (웹 흐름 로그인 성공)"); // 여기 도달 = 인증 통과, 곧 세션 저장
   } else {
     // CLI 흐름: 터미널에서 물어본다(기존 동작).
     const rl = createInterface({ input, output });
