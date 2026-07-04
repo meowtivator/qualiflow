@@ -2,7 +2,7 @@
 // 현재 명령: send_message — 웹에서 답장을 적재하면 여기서 기존 sendMessage로 채널에 보낸다.
 // 보안/전송: authedFetch(Bearer 토큰)로만 서버와 통신. 채널 세션/발송은 전부 이 PC 로컬.
 
-import { removeAccount } from "./accounts";
+import { hasSession, listAccounts, removeAccount } from "./accounts";
 import { authedFetch, NotPairedError } from "./api-client";
 import { fetchAllAccounts, sendMessage } from "./fetch";
 import { pushAllAccounts } from "./push";
@@ -124,29 +124,50 @@ function watchMaxBackoffMs(): number {
 // 한 사이클: 라이브 fetch → push. push는 미페어링이면 건너뛴다(로컬 fetch만으로도 의미 있음).
 // 사이클 자체 실패(예: fetch 전부 throw)는 호출자가 잡아 백오프하도록 다시 던진다.
 async function watchCycle(): Promise<void> {
-  const summaries = await fetchAllAccounts({ cached: false });
-  console.log("── fetch 요약 ──");
-  for (const summary of summaries) {
-    console.log(`   ${summary.channel}/${summary.label}: 대화 ${summary.conversationCount} · 메시지 ${summary.messageCount}`);
+  // ── 게이트 진단(관측만; fetch 로직은 안 바꾼다) ──────────────────────────────
+  // "CRM에 안 뜬다"가 어느 문에서 막혔는지 로그로 드러낸다: 등록 0개 / 세션 없음 / fetch 0건 / push 실패.
+  // 이 [watch] 라인들은 상주 로그(qualiflow-agent.log 등)에 남아 소유자가 게이트를 즉시 짚는다.
+  const accounts = await listAccounts();
+  if (!accounts.length) {
+    // 0개면 왜인지 힌트: 등록부 경로. 배포본은 QUALIFLOW_HOME 기준, 개발은 레포 기준(accounts.ts).
+    console.log(
+      `[watch] 등록 계정 0개 — 등록부가 비었거나 경로 불일치. QUALIFLOW_HOME=${process.env.QUALIFLOW_HOME ?? "(미설정: 레포 기준 경로 사용)"}`
+    );
+  } else {
+    console.log(`[watch] 등록 계정 ${accounts.length}개: ${accounts.map((a) => `${a.channel}/${a.label}`).join(", ")}`);
+    // 계정별 세션 유무를 관측 로그로만 남긴다(스킵 판정 자체는 각 커넥터가 하므로 동작 불변).
+    for (const account of accounts) {
+      const has = await hasSession(account.channel, account.label);
+      console.log(
+        `[watch] ${account.channel}/${account.label} 세션 ${has ? "있음" : "없음(로그인 안 됨 → 커넥터가 스킵할 수 있음)"}`
+      );
+    }
   }
 
-  // push: 페어링됐을 때만 클라우드로 올린다. 미페어링이면 조용히 건너뛴다(watch는 계속 fetch).
+  const summaries = await fetchAllAccounts({ cached: false });
+  for (const summary of summaries) {
+    console.log(`[watch] ${summary.channel}/${summary.label} 새 대화 ${summary.conversationCount}건 fetch (메시지 ${summary.messageCount})`);
+  }
+
+  // push: 페어링됐을 때만 클라우드로 올린다. 미페어링/토큰없음/HTTP실패는 조용히 넘기지 않고 사유를 로그.
   try {
     const results = await pushAllAccounts();
-    if (results.length) {
-      console.log("── push 요약 ──");
-      for (const result of results) {
-        const icon = result.status === "pushed" ? "✅" : result.status === "skipped" ? "⏭️ " : "❌";
-        console.log(`   ${icon} ${result.channel}/${result.label} — ${result.detail}`);
+    for (const result of results) {
+      if (result.status === "pushed") {
+        console.log(`[watch] ingest push → ok (${result.channel}/${result.label}) ${result.detail}`);
+      } else if (result.status === "skipped") {
+        console.log(`[watch] ingest push → 스킵 (${result.channel}/${result.label}) 사유: ${result.detail}`);
+      } else {
+        console.error(`[watch] ingest push → 실패 (${result.channel}/${result.label}) 사유: ${result.detail}`);
       }
     }
   } catch (error) {
     if (error instanceof NotPairedError) {
-      console.log("   ⏭️  미페어링 — 클라우드 push는 건너뜁니다(로컬 fetch만 수행). 'pair <코드>'로 연결하면 자동 동기화됩니다.");
+      console.log("[watch] ingest push → 실패(미페어링) — 클라우드에 안 올라감. 'pair <코드>'로 연결하면 자동 동기화됩니다.");
     } else {
       // ★push 실패는 백오프시키지 않는다 — fetch는 이미 .data에 저장돼 유실 없고, push만 다음 사이클에
       //   재시도한다. 예전엔 throw해서 push 장애가 fetch 주기(최대 30분)까지 끌어내렸다(실시간성 저하). 분리.
-      console.error(`   ❌ push 실패(다음 사이클에 재시도): ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[watch] ingest push → 실패(다음 사이클 재시도): ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }
