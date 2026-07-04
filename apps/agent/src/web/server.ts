@@ -345,12 +345,16 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     connectState.set(key, st);
 
     const prompts: TelegramAuthPrompts = {
-      phoneNumber: async () => phone,
+      phoneNumber: async () => {
+        console.log(`[tg] phoneNumber() 호출 → ${phone}`); // gramjs 가 전화번호를 요청 = 로그인 시작됨
+        return phone;
+      },
       // ★게이트 재무장: gramjs auth.js 의 phoneCode 루프(while(1))는 SignIn 실패 시 onError 후
       //   phoneCode() 를 다시 부른다. 매번 '다음 제출'을 기다리는 새 deferred 를 만들어 돌려줘야
       //   틀린 코드 뒤 사용자가 새 코드를 넣을 때까지 대기한다. (안 그러면 이미 resolve된 같은
       //   promise 를 즉시 돌려줘 같은 틀린 코드로 SignIn 무한반복 → FLOOD_WAIT/차단.)
       phoneCode: async () => {
+        console.log("[tg] phoneCode() 호출 → stage=code (코드 입력 대기)"); // 여기가 안 찍히면 gramjs 가 코드 단계로 안 온 것
         st.codeGate = deferred<string>(); // 재무장 — 항상 '다음 코드 제출'을 기다린다
         st.stage = "code"; // 코드 콜백이 불렸다 = 텔레그램이 코드를 보냈다 → 입력 대기
         return st.codeGate.promise;
@@ -366,6 +370,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       //   — phoneCode 재무장(위)이 '다음 코드'를 기다려 사용자가 새 코드로 재시도할 수 있게. 반면 2FA
       //   미지원은 회복 불가라 truthy 로 즉시 끊어 무한루프를 막는다.
       onError: (err): boolean => {
+        console.log(`[tg] onError: ${err.message}`); // gramjs 로그인 루프의 오류(PHONE_CODE_INVALID/EXPIRED/2FA 등)
         st.stage = err.message === TG_2FA_UNSUPPORTED ? "error" : "code";
         st.error = err.message; // PHONE_CODE_INVALID / PHONE_CODE_EXPIRED / 2FA 안내를 그대로 노출
         return err.message === TG_2FA_UNSUPPORTED; // 2FA는 즉시 중단, 코드 오류는 계속(재시도 가능)
@@ -374,10 +379,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
     loginTelegram(sessionPath("telegram", label), prompts)
       .then(async () => {
+        console.log("[tg] login resolved (세션 저장 완료)");
         await ensureRegistered("telegram", label);
         st.stage = "done";
       })
       .catch((error: unknown) => {
+        console.log(`[tg] login rejected: ${error instanceof Error ? error.message : String(error)}`);
         st.stage = "error";
         st.error = error instanceof Error ? error.message : "Telegram 로그인 실패";
       });
