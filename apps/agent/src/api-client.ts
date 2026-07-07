@@ -12,14 +12,27 @@ export class NotPairedError extends Error {
   }
 }
 
-export async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function authedFetch(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 120_000
+): Promise<Response> {
   const token = await loadToken();
   if (!token) {
     throw new NotPairedError();
   }
   const headers = new Headers(init.headers);
   headers.set("authorization", `Bearer ${token}`);
-  return fetch(`${CLOUD_BASE_URL}${path}`, { ...init, headers });
+  // ★무한 대기 방지. 특히 롱폴(명령 채널)은 프록시(Cloudflare 등)가 연결을 조용히 끊으면 fetch 가
+  //   영원히 매달리거나 'fetch failed'로 튄다 → AbortController 로 상한을 둔다. 정상 롱폴은 서버가
+  //   그 전에 응답하므로 abort 는 예외 상황(끊김)에서만 발생 → 호출부가 조용히 재연결한다.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(`${CLOUD_BASE_URL}${path}`, { ...init, headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // /api/agents/me 응답 모양(계약). telegram 은 클라우드가 붙여줄 수도, 아닐 수도 있다(bpd 레인이 채움).

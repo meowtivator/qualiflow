@@ -20,7 +20,9 @@ type AgentCommand = {
 };
 
 async function claimCommands(): Promise<AgentCommand[]> {
-  const response = await authedFetch("/api/agents/commands"); // 롱폴 GET
+  // 롱폴 GET — 서버가 최대 ~20초 잡고 응답(Cloudflare ~30초 컷 전에 먼저 응답하도록 서버 deadline 조정).
+  //   35초 상한은 안전망: 정상이면 서버가 20초쯤 응답하고, 연결이 끊기면 abort → 호출부가 조용히 재연결.
+  const response = await authedFetch("/api/agents/commands", {}, 35_000); // 롱폴 GET
   if (!response.ok) {
     throw new Error(`명령 조회 실패: HTTP ${response.status}`);
   }
@@ -220,7 +222,17 @@ export async function serve(): Promise<void> {
         console.error("미연결 — 먼저 'pair <코드>'로 페어링하세요.");
         return;
       }
-      console.error("명령 폴 실패:", error instanceof Error ? error.message : error);
+      // 롱폴 연결이 프록시에 끊기거나(fetch failed) abort 된 것은 '정상' 재연결 대상 —
+      //   에러로 도배하지 않고 곧바로 다시 건다. 그 외 진짜 에러만 로그 + 5초 백오프.
+      const msg = error instanceof Error ? error.message : String(error);
+      const transient =
+        (error instanceof Error && error.name === "AbortError") ||
+        /fetch failed|terminated|other side closed|ECONNRESET|socket hang up|network/i.test(msg);
+      if (transient) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      console.error("명령 폴 실패:", msg);
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
