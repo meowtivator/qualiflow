@@ -517,10 +517,13 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
   // 자동화 플래그 없는 "그냥 크롬" + inquiry:login 이 만든 영구 프로필(화면 밖).
   const chrome = spawnChrome(chromePath, profileDir, DEBUG_PORT, ONETALK_URL, { offscreen: true });
 
-  if (!(await waitForCdp(DEBUG_PORT))) {
-    chrome.kill("SIGTERM");
-    throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 떠 있으면 닫고 다시 시도하세요.");
-  }
+  // ★크롬 정리 보장: 아래 어느 지점에서 throw/조기반환 해도 finally 가 크롬을 확실히 종료한다.
+  //   예전엔 connectOverCDP/newPage/추출 중 에러가 kill 을 건너뛰어 크롬 자식 프로세스가 매 실패마다
+  //   누적됐다(좀비). finally 로 감싸 매 사이클이 자기 크롬을 반드시 정리한다.
+  try {
+    if (!(await waitForCdp(DEBUG_PORT))) {
+      throw new Error("크롬 디버그 포트가 안 열렸어요. 같은 프로필을 쓰는 다른 크롬 창이 떠 있으면 닫고 다시 시도하세요.");
+    }
 
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${DEBUG_PORT}`);
   const context = browser.contexts()[0];
@@ -787,9 +790,12 @@ export async function extractAlibaba(profileDir: string): Promise<AlibabaRawConv
     }
   }
 
-  await browser.close();
-  chrome.kill("SIGTERM");
-  return conversations;
+    await browser.close();
+    return conversations;
+  } finally {
+    // 모든 경로(성공/에러/조기반환)에서 크롬을 확실히 종료 — 누수 방지. 이미 죽었으면 SIGTERM 은 무해.
+    chrome.kill("SIGTERM");
+  }
 }
 
 // CLI 래퍼: 환경변수로 받아 extractAlibaba 실행 → 파일 저장(standalone inquiry:extract 용).
