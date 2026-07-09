@@ -222,12 +222,13 @@ export async function serve(): Promise<void> {
         console.error("미연결 — 먼저 'pair <코드>'로 페어링하세요.");
         return;
       }
-      // 롱폴 연결이 프록시에 끊기거나(fetch failed) abort 된 것은 '정상' 재연결 대상 —
+      // 롱폴 연결이 프록시에 끊기거나(fetch failed) abort 되거나, 게이트웨이가 롱폴을 5xx로 끊는 것
+      //   (Cloudflare/Caddy 가 오래 잡은 연결을 502/503/504 로 반환)은 모두 '정상' 재연결 대상 —
       //   에러로 도배하지 않고 곧바로 다시 건다. 그 외 진짜 에러만 로그 + 5초 백오프.
       const msg = error instanceof Error ? error.message : String(error);
       const transient =
         (error instanceof Error && error.name === "AbortError") ||
-        /fetch failed|terminated|other side closed|ECONNRESET|socket hang up|network/i.test(msg);
+        /fetch failed|terminated|other side closed|ECONNRESET|socket hang up|network|HTTP 5\d\d/i.test(msg);
       if (transient) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
         continue;
