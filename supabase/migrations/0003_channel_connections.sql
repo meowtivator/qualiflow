@@ -7,7 +7,7 @@ create table if not exists public.channel_connections (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   channel text not null,                  -- 'alibaba','instagram','telegram'...
-  account_label text not null,            -- 내 계정 구분: "jaeu bag", "thedozers"
+  account_label text not null,            -- 내 계정 구분: "기본 계정", "회사 계정"
   external_account_id text,               -- 채널 계정 id(aliId 등), 알면
   status text not null default 'disconnected'
     check (status in ('disconnected', 'active', 'needs_relogin', 'error')),
