@@ -53,7 +53,7 @@ console.log(`③ Node 바이너리 동봉(${nodeName})`);
 // ★CLOUD_URL은 공개값(레포에 박아도 OK). 텔레그램 api_id/hash는 '빌드 env'에서만 읽는다(레포에 시크릿 안 박힘).
 //   빌드 시 TELEGRAM_API_ID/HASH 를 주면 설치본 런처에 주입돼, 대표는 전화번호+코드만 넣으면 된다.
 //   (설치본에 동봉되면 노출됨 — 단일 대표/데모 한정. 미리 설정된 env가 있으면 그걸 우선.)
-const CLOUD_URL = process.env.QUALIFLOW_CLOUD_URL || "https://crm.thedozers.com";
+const CLOUD_URL = process.env.QUALIFLOW_CLOUD_URL || "http://localhost:3000";
 const TG_API_ID = process.env.TELEGRAM_API_ID || "";
 const TG_API_HASH = process.env.TELEGRAM_API_HASH || "";
 // 설치본 버전 = 릴리스 태그의 X.Y.Z. 우선순위: AGENT_VERSION env(릴리스 CI가 태그로 지정) →

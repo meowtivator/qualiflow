@@ -7,6 +7,8 @@ dist
 .env.local
 .auth/
 .captures/
+.playwright-mcp/
+.claude/launch.json
 .data/
 .DS_Store
 *.log

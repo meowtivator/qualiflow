@@ -40,7 +40,7 @@ export type ChannelConnection = {
   id: EntityId;
   workspaceId?: EntityId;
   channel: ChannelId;
-  accountLabel: string; // 내 계정 구분: "jaeu bag", "thedozers"
+  accountLabel: string; // 내 계정 구분: "기본 계정", "회사 계정"
   ownerUserId?: EntityId;
   ownerLabel?: string;
   externalAccountId?: string; // 채널 계정 id(aliId 등), 알면

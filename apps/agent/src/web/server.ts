@@ -109,21 +109,21 @@ function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(json);
 }
 
-// CRM 웹(crm.thedozers.com 등 다른 오리진)이 브라우저 fetch 로 읽을 수 있게 CORS 허용.
+// QualiFlow 웹이 다른 오리진에서 브라우저 fetch 로 읽을 수 있게 CORS 허용.
 // ★버전 노출·업데이트 트리거 전용(3개 엔드포인트만) — 시크릿/페어링/상태는 이 헬퍼를 안 쓴다.
 // 서버는 127.0.0.1 바인딩이라 '같은 컴퓨터의 브라우저 탭'만 도달할 수 있다(외부 X). 하지만 그 탭이
 // '대표가 방문한 아무 웹사이트'일 수도 있어(CSRF), self-update 같은 상태변경은 * 로 열면 위험하다.
-// → 허용 Origin 화이트리스트로 좁힌다: 로컬 마법사 자신 + CRM(로컬/배포). 그 외 Origin 은 CORS 헤더를
+// → 허용 Origin 화이트리스트로 좁힌다: 로컬 마법사 자신 + 설정된 QualiFlow 웹. 그 외 Origin 은 CORS 헤더를
 //   안 붙이거나(읽기) 403 으로 거부(self-update). credentials 는 안 쓰므로 echo 방식으로 충분.
 const ALLOWED_ORIGINS = new Set(
   [
-    "https://crm.thedozers.com",
     `http://${HOST}:${PORT}`,
     `http://localhost:${PORT}`,
-    // 설치본 CLOUD_URL(배포 CRM 오리진). 프로토콜+호스트만(경로/포트 포함) — new URL 로 정규화.
+    // 설치본 CLOUD_URL(배포 웹 오리진). 프로토콜+호스트만(경로/포트 포함) — new URL 로 정규화.
     (() => {
       try {
-        return new URL(CLOUD_BASE_URL).origin;
+        const url = new URL(CLOUD_BASE_URL);
+        return (url.protocol === "http:" || url.protocol === "https:") && url.origin !== "null" ? url.origin : "";
       } catch {
         return "";
       }
@@ -183,7 +183,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return;
   }
 
-  // 설치된 에이전트 버전 — CRM 웹이 이 값으로 "설치됨/업데이트 있음"을 판단한다. 시크릿 없음(CORS 허용).
+  // 설치된 에이전트 버전 — QualiFlow 웹이 이 값으로 "설치됨/업데이트 있음"을 판단한다. 시크릿 없음(CORS 허용).
   if (req.method === "GET" && url === "/api/version") {
     sendCors(res, 200, { version: AGENT_VERSION, platform: process.platform }, req);
     return;

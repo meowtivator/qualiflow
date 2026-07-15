@@ -125,9 +125,9 @@ function render(){
   var b=$("body");
   if(st.step===0){
     if(st.paired){
-      b.innerHTML='<h2>계정 연결됨</h2><p class="sub">이 컴퓨터가 회사 CRM 계정에 연결됐습니다. 다음으로 진행하세요.</p><span class="badge ok">\\u2713 연결됨</span>';
+      b.innerHTML='<h2>계정 연결됨</h2><p class="sub">이 컴퓨터가 QualiFlow workspace에 연결됐습니다. 다음으로 진행하세요.</p><span class="badge ok">\\u2713 연결됨</span>';
     } else {
-      b.innerHTML='<h2>회사 CRM 계정에 연결</h2><p class="sub">대시보드에서 연결 코드를 받아 아래에 붙여넣으세요. 한 번만 하면 됩니다.</p>'
+      b.innerHTML='<h2>QualiFlow workspace에 연결</h2><p class="sub">QualiFlow 웹에서 연결 코드를 받아 아래에 붙여넣으세요. 한 번만 하면 됩니다.</p>'
         +'<div class="row"><input id="code" type="text" placeholder="XXXX-XXXX" autocomplete="off" /><button class="primary" id="pair">연결</button></div>'
         +'<div style="margin-top:10px"><a class="link" id="getcode" href="#">대시보드에서 코드 받기 \\u2197</a> <span id="perr" style="color:#c0392b;font-size:13px;margin-left:8px"></span></div>'
         +'<div class="sec">\\uD83D\\uDD12 채널 로그인·세션은 이 컴퓨터에만 저장되고 서버로 가지 않습니다.</div>';
