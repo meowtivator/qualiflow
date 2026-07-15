@@ -232,7 +232,7 @@ async function main() {
 
     case "wizard": {
       // 상주형 마법사 — setup 과 같은 로컬 웹 UI 를 127.0.0.1:4317 에 '항상' 띄우되 브라우저는
-      // 열지 않는다. 설치본이 이 명령을 백그라운드 서비스로 등록해, 대표가 CRM 웹의
+      // 열지 않는다. 설치본이 이 명령을 백그라운드 서비스로 등록해, 사용자가 QualiFlow 웹의
       // "채널 추가" 버튼을 누르면 이 로컬 마법사(localhost:4317)가 언제든 열리게 한다.
       await startWizard({ open: false });
       return;
